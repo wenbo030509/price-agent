@@ -30,36 +30,40 @@ price-agent/
 ├── app.py                          # Flask Web应用（后端）
 ├── main.py                         # 命令行版本
 ├── db_manager.py                   # 数据库管理工具
-├── test_multi_platform.py         # 多平台比价测试
+├── test_multi_platform.py          # 多平台比价测试
+├── test_query_fix.py               # 查询修复验证测试
+├── test_color_memory.py            # 颜色和内存字段测试
 ├── config/
-│   └── settings.py                # 配置管理
+│   └── settings.py                 # 配置管理
 ├── database/
-│   ├── connection.py              # 数据库连接（线程安全）
-│   └── models.py                  # 数据模型和操作
-├── platforms/
-│   ├── __init__.py                # 平台模块导出
-│   ├── platform_config.py         # 平台配置
-│   ├── platform_database.py       # 单平台数据库管理
-│   └── parallel_agent.py          # 并行查询Agent
-├── tools/
-│   ├── registry.py                # 工具注册器
-│   └── multi_platform_tools.py   # 多平台比价工具
+│   ├── connection.py               # 数据库连接（线程安全）
+│   └── models.py                   # 数据模型和操作
 ├── agent/
-│   ├── prompts.py                 # 系统提示词
-│   └── react_engine.py            # ReAct推理引擎
+│   ├── prompts.py                  # 系统提示词
+│   └── react_engine.py             # ReAct推理引擎
+├── platforms/
+│   ├── __init__.py                 # 平台模块导出
+│   ├── platform_config.py          # 平台配置
+│   ├── platform_database.py        # 单平台数据库管理
+│   └── parallel_agent.py           # 并行查询Agent
+├── tools/
+│   ├── __init__.py                 # 工具模块导出
+│   ├── registry.py                 # 工具注册器
+│   └── multi_platform_tools.py     # 多平台比价工具（3个核心工具）
 ├── templates/
-│   └── index.html                 # 前端页面
+│   └── index.html                  # 前端页面
 ├── static/
-│   ├── css/style.css              # 样式文件
-│   └── js/app.js                  # 前端逻辑
-├── platform_jd.db                 # 京东平台数据库
-├── platform_taobao.db             # 淘宝平台数据库
-├── platform_pdd.db                # 拼多多平台数据库
-├── platform_suning.db             # 苏宁平台数据库
+│   ├── css/style.css               # 样式文件
+│   └── js/app.js                   # 前端逻辑
+├── platform_jd.db                  # 京东平台数据库
+├── platform_taobao.db              # 淘宝平台数据库
+├── platform_pdd.db                 # 拼多多平台数据库
+├── platform_suning.db              # 苏宁平台数据库
 ├── requirements.txt
 ├── .env
 ├── README.md
-└── MULTI_PLATFORM_README.md       # 多平台比价详细文档
+├── 优化文档.md                      # 优化记录和待办项
+└── MULTI_PLATFORM_README.md        # 多平台比价详细文档
 ```
 
 ## 快速开始
@@ -309,9 +313,9 @@ python3 db_manager.py
 本系统提供3个核心工具，均通过 `@register_tool` 装饰器注册：
 
 1. **multi_platform_price_comparison** - 多平台并行比价
-   - 功能：在京东、淘宝、拼多多、苏宁4个平台并行查询商品价格
-   - 参数：`product_name` (商品名称)
-   - 返回：各平台价格对比结果，包含最低价、最高价、平均价
+   - 功能：在京东、淘宝、拼多多、苏宁4个平台并行查询商品价格，支持颜色、内存属性精确匹配
+   - 参数：`product_name` (商品名称，可包含颜色/内存，工具自动解析)、`color` (可选)、`memory` (可选)
+   - 返回：各平台价格对比结果，包含最低价、最高价、平均价、运费
 
 2. **get_all_platform_products** - 获取所有平台所有商品
    - 功能：并行查询所有平台的商品列表
@@ -319,8 +323,8 @@ python3 db_manager.py
    - 返回：各平台商品汇总
 
 3. **query_single_platform_product** - 查询指定平台商品
-   - 功能：查询单个平台指定商品的信息
-   - 参数：`platform_id` (平台ID: jd/taobao/pdd/suning)、`product_name` (商品名称)
+   - 功能：查询单个平台指定商品的信息，支持颜色、内存属性精确筛选
+   - 参数：`platform_id` (平台ID: jd/taobao/pdd/suning)、`product_name` (商品名称)、`color` (可选)、`memory` (可选)
    - 返回：指定平台的商品信息
 
 ### 添加新工具

@@ -49,6 +49,9 @@ ENV/
 .coverage
 htmlcov/
 
+# 调试脚本
+debug_tool.py
+
 # 临时文件
 tmp/
 temp/
