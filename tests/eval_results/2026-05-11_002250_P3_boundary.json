@@ -1,0 +1,182 @@
+{
+  "phase": "P3_boundary",
+  "total": 15,
+  "passed": 12,
+  "failed": 3,
+  "pass_rate": "80.0%",
+  "duration_ms": 164230,
+  "cases": [
+    {
+      "case_id": "BD-01",
+      "passed": true,
+      "details": {
+        "query": "iPhone 20 多少钱",
+        "expected_behavior": "告知未找到",
+        "answer_preview": "在京东、淘宝、拼多多、苏宁这几个平台均未找到名为\"iPhone 20\"的商品，无法查询到该商品的价格信息。",
+        "has_error": false,
+        "has_price": false,
+        "graceful": true
+      }
+    },
+    {
+      "case_id": "BD-02",
+      "passed": true,
+      "details": {
+        "query": "华为Mate60 在哪个平台",
+        "expected_behavior": "告知未找到",
+        "answer_preview": "在京东、淘宝、拼多多、苏宁这四个平台中，均未找到华为Mate60这款商品。",
+        "has_error": false,
+        "has_price": false,
+        "graceful": true
+      }
+    },
+    {
+      "case_id": "BD-03",
+      "passed": true,
+      "details": {
+        "query": "诺基亚3310 价格",
+        "expected_behavior": "告知未找到",
+        "answer_preview": "在京东、淘宝、拼多多、苏宁这几个电商平台中，均未找到诺基亚3310的相关商品，无法为您提供该商品的价格信息。",
+        "has_error": false,
+        "has_price": false,
+        "graceful": true
+      }
+    },
+    {
+      "case_id": "BD-04",
+      "passed": true,
+      "details": {
+        "query": "15",
+        "note": "极其模糊，需澄清",
+        "answer_preview": "你需要告诉我具体要对比哪个商品的价格，比如商品名称、型号等信息，比如“iPhone 15”，这样我才能帮你查询各平台的价格并对比哦。",
+        "has_error": false,
+        "asks_clarification": true,
+        "manual_review": true
+      }
+    },
+    {
+      "case_id": "BD-05",
+      "passed": true,
+      "details": {
+        "query": "苹果",
+        "note": "可指品牌或水果",
+        "answer_preview": "请你提供更具体的苹果产品名称，比如是iPhone 15、iPad Air、MacBook Pro等具体商品，这样我才能帮你对比各平台的价格哦。",
+        "has_error": false,
+        "asks_clarification": true,
+        "manual_review": true
+      }
+    },
+    {
+      "case_id": "BD-06",
+      "passed": true,
+      "details": {
+        "query": "便宜的",
+        "note": "无商品名",
+        "answer_preview": "请您提供具体的商品名称，比如\"iPhone 15\"、\"小米14\"等，我会帮您对比京东、淘宝、拼多多、苏宁各平台的价格，找出最便宜的平台~",
+        "has_error": false,
+        "asks_clarification": true,
+        "manual_review": true
+      }
+    },
+    {
+      "case_id": "BD-07",
+      "passed": true,
+      "details": {
+        "query": "帮我看看",
+        "note": "无实质内容",
+        "answer_preview": "你需要提供具体的商品名称，比如要对比哪个商品的价格，以及是否需要多平台比价等信息，这样我才能帮你进行查询哦。",
+        "has_error": false,
+        "asks_clarification": true,
+        "manual_review": true
+      }
+    },
+    {
+      "case_id": "BD-08",
+      "passed": true,
+      "details": {
+        "query": "",
+        "note": "空字符串",
+        "answer_preview": "请你告知需要对比价格的商品名称，若有颜色、内存等属性要求也可一并说明，这样我就能为你查询各平台的价格并进行对比啦。",
+        "has_error": false,
+        "crashed": false
+      }
+    },
+    {
+      "case_id": "BD-09",
+      "passed": true,
+      "details": {
+        "query": "!@#$%^&*()",
+        "note": "特殊字符",
+        "answer_preview": "请你明确一下具体的问题，比如想查询哪个商品在各平台的价格情况，需要提供商品名称等相关信息，我才能为你进行多平台比价或相关查询。",
+        "has_error": false,
+        "crashed": false
+      }
+    },
+    {
+      "case_id": "BD-10",
+      "passed": true,
+      "details": {
+        "query": "哈哈哈哈哈哈",
+        "note": "无意义输入",
+        "answer_preview": "你好呀！有什么商品需要对比价格或者查询信息吗？随时可以告诉我~",
+        "has_error": false,
+        "crashed": false
+      }
+    },
+    {
+      "case_id": "BD-11",
+      "passed": true,
+      "details": {
+        "query": "iPhone 15 紫色 1TB 在哪买",
+        "note": "无此配置组合",
+        "answer_preview": "根据查询结果，目前京东、淘宝、拼多多、苏宁四大平台均未找到iPhone 15 紫色 1TB版本的商品。各平台匹配到的相关版本为其他颜色和内存配置，具体如下：\n1. 拼多多：有iPhone 15 黑色128GB（5750元）、粉色128GB（5800元）、蓝色256GB（6700元）\n2. 淘宝：有i",
+        "has_error": false
+      }
+    },
+    {
+      "case_id": "BD-12",
+      "passed": true,
+      "details": {
+        "query": "比价价格低于 1000 的 iPhone 15",
+        "note": "不存在（mock 数据最低 5750）",
+        "answer_preview": "根据多平台比价结果，目前查询到的所有iPhone 15商品价格均不低于1000元，最低价为拼多多平台的iPhone 15 黑色128GB，价格5750元，该商品库存200件，无运费。各平台具体价格情况如下：\n- 拼多多：iPhone 15 黑色128GB 5750元、粉色128GB 5800元、蓝色",
+        "has_error": false
+      }
+    },
+    {
+      "case_id": "BD-13",
+      "passed": false,
+      "details": {
+        "note": "多轮对话：第1轮 iPhone 15 最便宜 | 第2轮 那小米14呢",
+        "reason": "需要 history 参数支持",
+        "status": "known_missing",
+        "skipped": true
+      }
+    },
+    {
+      "case_id": "BD-14",
+      "passed": false,
+      "details": {
+        "note": "多轮对话：京东查 iPhone 15 | 切换到淘宝",
+        "reason": "需要 history 参数支持",
+        "status": "known_missing",
+        "skipped": true
+      }
+    },
+    {
+      "case_id": "BD-15",
+      "passed": false,
+      "details": {
+        "note": "多轮对话：所有平台商品 | 筛选手机类",
+        "reason": "需要 history 参数支持",
+        "status": "known_missing",
+        "skipped": true
+      }
+    }
+  ],
+  "scored_total": 8,
+  "scored_passed": 8,
+  "scored_pass_rate": "100.0%",
+  "known_missing": 3,
+  "manual_review": 4
+}

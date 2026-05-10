@@ -1,0 +1,377 @@
+{
+  "phase": "P1_parse",
+  "total": 17,
+  "passed": 6,
+  "failed": 11,
+  "pass_rate": "35.3%",
+  "duration_ms": 879,
+  "cases": [
+    {
+      "case_id": "AP-01",
+      "passed": false,
+      "details": {
+        "input": "黑色 iPhone 15 256GB",
+        "expected": {
+          "product_name": "iPhone 15",
+          "color": "黑色",
+          "memory": "256GB"
+        },
+        "actual": {
+          "product_name": "黑色 iPhone 15 256GB",
+          "color": "",
+          "memory": ""
+        },
+        "scores": {
+          "product_name": false,
+          "color": true,
+          "memory": true,
+          "total": 2
+        }
+      }
+    },
+    {
+      "case_id": "AP-02",
+      "passed": true,
+      "details": {
+        "input": "iPhone 15",
+        "expected": {
+          "product_name": "iPhone 15",
+          "color": "",
+          "memory": ""
+        },
+        "actual": {
+          "product_name": "iPhone 15",
+          "color": "",
+          "memory": ""
+        },
+        "scores": {
+          "product_name": true,
+          "color": true,
+          "memory": true,
+          "total": 3
+        }
+      }
+    },
+    {
+      "case_id": "AP-03",
+      "passed": false,
+      "details": {
+        "input": "小米14 白色",
+        "expected": {
+          "product_name": "小米14",
+          "color": "白色",
+          "memory": ""
+        },
+        "actual": {
+          "product_name": "小米14 白色",
+          "color": "",
+          "memory": ""
+        },
+        "scores": {
+          "product_name": false,
+          "color": true,
+          "memory": true,
+          "total": 2
+        }
+      }
+    },
+    {
+      "case_id": "AP-04",
+      "passed": false,
+      "details": {
+        "input": "小米14 512GB 绿色",
+        "expected": {
+          "product_name": "小米14",
+          "color": "绿色",
+          "memory": "512GB"
+        },
+        "actual": {
+          "product_name": "小米14 512GB 绿色",
+          "color": "",
+          "memory": ""
+        },
+        "scores": {
+          "product_name": false,
+          "color": true,
+          "memory": true,
+          "total": 2
+        }
+      }
+    },
+    {
+      "case_id": "AP-05",
+      "passed": true,
+      "details": {
+        "input": "AirPods Pro 2",
+        "expected": {
+          "product_name": "AirPods Pro 2",
+          "color": "",
+          "memory": ""
+        },
+        "actual": {
+          "product_name": "AirPods Pro 2",
+          "color": "",
+          "memory": ""
+        },
+        "scores": {
+          "product_name": true,
+          "color": true,
+          "memory": true,
+          "total": 3
+        }
+      }
+    },
+    {
+      "case_id": "AP-06",
+      "passed": true,
+      "details": {
+        "input": "iPad Pro 11寸",
+        "expected": {
+          "product_name": "iPad Pro",
+          "color": "",
+          "memory": ""
+        },
+        "actual": {
+          "product_name": "iPad Pro 11寸",
+          "color": "",
+          "memory": ""
+        },
+        "scores": {
+          "product_name": true,
+          "color": true,
+          "memory": true,
+          "total": 3
+        }
+      }
+    },
+    {
+      "case_id": "AP-07",
+      "passed": false,
+      "details": {
+        "input": "128GB 小米平板6 黑色",
+        "expected": {
+          "product_name": "小米平板6",
+          "color": "黑色",
+          "memory": "128GB"
+        },
+        "actual": {
+          "product_name": "128GB 小米平板6 黑色",
+          "color": "",
+          "memory": ""
+        },
+        "scores": {
+          "product_name": false,
+          "color": true,
+          "memory": true,
+          "total": 2
+        }
+      }
+    },
+    {
+      "case_id": "AL-01",
+      "passed": false,
+      "details": {
+        "input": "水果手机 15 黑色",
+        "expected": {
+          "product_name": "iPhone 15",
+          "color": "黑色",
+          "memory": ""
+        },
+        "actual": {
+          "product_name": "水果手机 15 黑色",
+          "color": "",
+          "memory": ""
+        },
+        "scores": {
+          "product_name": false,
+          "color": true,
+          "memory": true,
+          "total": 2
+        }
+      }
+    },
+    {
+      "case_id": "AL-02",
+      "passed": false,
+      "details": {
+        "input": "苹果手机 256GB",
+        "expected": {
+          "product_name": "iPhone",
+          "color": "",
+          "memory": "256GB"
+        },
+        "actual": {
+          "product_name": "苹果手机 256GB",
+          "color": "",
+          "memory": ""
+        },
+        "scores": {
+          "product_name": false,
+          "color": true,
+          "memory": true,
+          "total": 2
+        }
+      }
+    },
+    {
+      "case_id": "AL-03",
+      "passed": false,
+      "details": {
+        "input": "水果手表",
+        "expected": {
+          "product_name": "Apple Watch",
+          "color": "",
+          "memory": ""
+        },
+        "actual": {
+          "product_name": "水果手表",
+          "color": "",
+          "memory": ""
+        },
+        "scores": {
+          "product_name": false,
+          "color": true,
+          "memory": true,
+          "total": 2
+        }
+      }
+    },
+    {
+      "case_id": "AL-04",
+      "passed": false,
+      "details": {
+        "input": "苹果平板",
+        "expected": {
+          "product_name": "iPad",
+          "color": "",
+          "memory": ""
+        },
+        "actual": {
+          "product_name": "苹果平板",
+          "color": "",
+          "memory": ""
+        },
+        "scores": {
+          "product_name": false,
+          "color": true,
+          "memory": true,
+          "total": 2
+        }
+      }
+    },
+    {
+      "case_id": "AL-05",
+      "passed": false,
+      "details": {
+        "input": "ip15 白色 128g",
+        "expected": {
+          "product_name": "iPhone 15",
+          "color": "白色",
+          "memory": "128GB"
+        },
+        "actual": {
+          "product_name": "ip15 白色 128g",
+          "color": "",
+          "memory": ""
+        },
+        "scores": {
+          "product_name": false,
+          "color": true,
+          "memory": true,
+          "total": 2
+        }
+      }
+    },
+    {
+      "case_id": "AL-06",
+      "passed": false,
+      "details": {
+        "input": "米14 绿色",
+        "expected": {
+          "product_name": "小米14",
+          "color": "绿色",
+          "memory": ""
+        },
+        "actual": {
+          "product_name": "米14 绿色",
+          "color": "",
+          "memory": ""
+        },
+        "scores": {
+          "product_name": false,
+          "color": true,
+          "memory": true,
+          "total": 2
+        }
+      }
+    },
+    {
+      "case_id": "AL-07",
+      "passed": false,
+      "details": {
+        "input": "苹果手机 15 黑",
+        "expected": {
+          "product_name": "iPhone 15",
+          "color": "黑色",
+          "memory": ""
+        },
+        "actual": {
+          "product_name": "苹果手机 15 黑",
+          "color": "",
+          "memory": ""
+        },
+        "scores": {
+          "product_name": false,
+          "color": true,
+          "memory": true,
+          "total": 2
+        }
+      }
+    },
+    {
+      "case_id": "AM-01",
+      "passed": true,
+      "details": {
+        "input": "苹果",
+        "actual": {
+          "product_name": "苹果",
+          "color": "",
+          "memory": ""
+        },
+        "note": "品牌或品类歧义",
+        "manual_review": true
+      }
+    },
+    {
+      "case_id": "AM-02",
+      "passed": true,
+      "details": {
+        "input": "手机",
+        "actual": {
+          "product_name": "手机",
+          "color": "",
+          "memory": ""
+        },
+        "note": "品类而非具体商品",
+        "manual_review": true
+      }
+    },
+    {
+      "case_id": "AM-03",
+      "passed": true,
+      "details": {
+        "input": "便宜的",
+        "actual": {
+          "product_name": "便宜的",
+          "color": "",
+          "memory": ""
+        },
+        "note": "无商品名",
+        "manual_review": true
+      }
+    }
+  ],
+  "scored_total": 14,
+  "scored_passed": 3,
+  "scored_pass_rate": "21.4%"
+}
