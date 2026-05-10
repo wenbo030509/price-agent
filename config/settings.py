@@ -14,6 +14,10 @@ class Settings:
     def _load_api_config(self):
         """加载API配置"""
         self.api_key = os.getenv("ARK_API_KEY")
+        if not self.api_key:
+            raise ValueError(
+                "ARK_API_KEY 未设置。请在 .env 文件中配置 ARK_API_KEY=your_key"
+            )
         self.base_url = "https://ark.cn-beijing.volces.com/api/v3"
         self.model = os.getenv("ARK_MODEL", "doubao-seed-1-8-251228")
         self.client = OpenAI(
