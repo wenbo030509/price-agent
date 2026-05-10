@@ -169,18 +169,26 @@ def chat():
     
     # 保存用户消息
     add_message(db, session_id, 'user', user_message)
-    
+
+    # 从数据库读取历史消息作为上下文（排除刚写入的当前消息）
+    all_history = get_session_messages(db, session_id)
+    history_for_agent = [
+        {"role": msg["role"], "content": msg["content"]}
+        for msg in all_history[:-1]  # 排除最后一条（刚写入的当前 user 消息）
+        if msg.get("role") in ("user", "assistant") and msg.get("content")
+    ]
+
     # 捕获Agent的输出
     old_stdout = sys.stdout
     sys.stdout = buffer = io.StringIO()
-    
+
     try:
-        # 运行Agent
-        answer = agent.run(user_message, verbose=True)
-        
+        # 运行Agent（传入历史上下文）
+        answer = agent.run(user_message, history=history_for_agent, verbose=True)
+
         # 获取并解析推理过程
         reasoning_output = buffer.getvalue()
-        
+
         # 保存助手消息
         add_message(db, session_id, 'assistant', answer)
         
