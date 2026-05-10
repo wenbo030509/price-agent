@@ -256,9 +256,105 @@ class PlatformDatabase:
         # 按分数降序、价格升序排列，取最佳匹配
         scored = sorted([score(r) for r in candidates], key=lambda x: (x[0], x[1]), reverse=True)
         best_score, _, best_result = scored[0]
+        best_result["_match_score"] = best_score
 
         # 至少 product_name 匹配就返回（分数 0 也行，作为兜底）
         return best_result
+
+    def query_products_by_attrs(
+        self,
+        product_name: str,
+        color: Optional[str] = None,
+        memory: Optional[str] = None,
+        category: Optional[str] = None,
+    ) -> List[Dict]:
+        """
+        返回所有匹配的候选商品，按匹配分数降序排列。
+        当用户查询模糊时（如"手机"、"iPhone"），可返回所有匹配结果。
+        """
+        cursor = self.get_cursor()
+
+        color_tokens = _color_tokens(color) if color else []
+        memory_tokens = _memory_tokens(memory) if memory else []
+
+        base_sql = """
+            SELECT id, product_name, price, stock, category,
+                   platform_price, shipping_fee, is_in_stock, color, memory
+            FROM products
+            WHERE product_name LIKE ?
+        """
+        params = [f"%{product_name}%"]
+
+        if category:
+            base_sql += " AND category LIKE ?"
+            params.append(f"%{category}%")
+
+        cursor.execute(base_sql, params)
+        candidates = cursor.fetchall()
+
+        if not candidates:
+            return self._fuzzy_match_all(product_name)
+
+        def row_to_dict(row) -> Dict:
+            return {
+                "platform_id": self.platform_id,
+                "platform_name": self.platform_name,
+                "id": row[0],
+                "product_name": row[1],
+                "price": row[2],
+                "platform_price": row[5] or row[2],
+                "stock": row[3],
+                "category": row[4],
+                "shipping_fee": row[6],
+                "is_in_stock": bool(row[7]),
+                "color": row[8],
+                "memory": row[9],
+            }
+
+        def score(row) -> Tuple[int, float, dict]:
+            s = 0
+            row_color = _normalize(row[8] or "")
+            row_memory = _normalize(row[9] or "")
+            if color_tokens and any(t in row_color for t in color_tokens):
+                s += 1
+            if memory_tokens and any(t in row_memory for t in memory_tokens):
+                s += 1
+            return s, -(row[5] or row[2]), row_to_dict(row)
+
+        scored = sorted([score(r) for r in candidates], key=lambda x: (x[0], x[1]), reverse=True)
+        results = []
+        for s, _, d in scored:
+            d["_match_score"] = s
+            results.append(d)
+        return results
+
+    def _fuzzy_match_all(self, product_name: str) -> List[Dict]:
+        """模糊匹配兜底：返回所有 product_name 子串匹配的商品"""
+        cursor = self.get_cursor()
+        cursor.execute(
+            "SELECT id, product_name, price, stock, category, platform_price, shipping_fee, is_in_stock, color, memory FROM products"
+        )
+        all_products = cursor.fetchall()
+        norm_query = _normalize(product_name)
+        results = []
+        for p in all_products:
+            norm_p = _normalize(p[1])
+            if norm_query in norm_p or norm_p in norm_query:
+                results.append({
+                    "platform_id": self.platform_id,
+                    "platform_name": self.platform_name,
+                    "id": p[0],
+                    "product_name": p[1],
+                    "price": p[2],
+                    "platform_price": p[5] or p[2],
+                    "stock": p[3],
+                    "category": p[4],
+                    "shipping_fee": p[6],
+                    "is_in_stock": bool(p[7]),
+                    "color": p[8],
+                    "memory": p[9],
+                })
+        return results
 
     def _fuzzy_match(self, product_name: str) -> Optional[Dict]:
         """原有规范化模糊匹配逻辑（兜底）"""

@@ -46,6 +46,24 @@ class PlatformAgent:
                 print(f"⚠️  {self.config['name']}查询出错: {e}")
                 return None
 
+    def query_products_by_attrs(
+        self,
+        product_name: str,
+        color: Optional[str] = None,
+        memory: Optional[str] = None,
+    ) -> List[Dict]:
+        """按属性查询所有匹配商品（模糊查询用）"""
+        with self._lock:
+            try:
+                return self.db.query_products_by_attrs(
+                    product_name=product_name,
+                    color=color,
+                    memory=memory,
+                )
+            except Exception as e:
+                print(f"⚠️  {self.config['name']}查询出错: {e}")
+                return []
+
     def query_all_products(self) -> List[Dict]:
         """查询所有商品"""
         with self._lock:
@@ -172,82 +190,72 @@ class PlatformParallelAgent:
         timeout: int = 10
     ) -> Dict:
         """
-        比价查询：找出最低价和最高价的平台
-        :param product_name: 商品名称
-        :param color: 可选的商品颜色属性
-        :param memory: 可选的商品内存属性
-        :param timeout: 超时时间（秒）
-        :return: 比价结果
+        比价查询：在所有平台并行查询，返回各平台所有匹配商品及比价分析。
+        模糊查询时会返回该平台所有候选商品。
         """
         executor = self._get_executor()
         futures = {}
 
         for platform_id, agent in self.agents.items():
             future = executor.submit(
-                agent.query_product_by_attrs,
+                agent.query_products_by_attrs,
                 product_name,
                 color=color,
                 memory=memory,
             )
             futures[future] = platform_id
 
-        results = {}
+        platform_results = {}
         errors = {}
 
         for future in concurrent.futures.as_completed(futures, timeout=timeout):
             platform_id = futures[future]
             try:
-                result = future.result()
-                if result and "price" in result:
-                    results[platform_id] = result
+                matches = future.result()
+                if matches:
+                    platform_results[platform_id] = matches
             except concurrent.futures.TimeoutError:
                 errors[platform_id] = "查询超时"
             except Exception as e:
                 errors[platform_id] = str(e)
 
-        valid_results = list(results.values())
-        
-        if not valid_results:
+        # 汇总所有匹配商品
+        all_matches = []
+        for matches in platform_results.values():
+            all_matches.extend(matches)
+
+        if not all_matches:
             return {
                 "product_name": product_name,
                 "found": False,
                 "message": "在所有平台都未找到该商品"
             }
-        
-        # 找出最低和最高价格
-        valid_results.sort(key=lambda x: x["platform_price"])
-        cheapest = valid_results[0]
-        most_expensive = valid_results[-1]
-        
-        # 计算平均价格
-        avg_price = sum(r["platform_price"] for r in valid_results) / len(valid_results)
-        
+
+        # 按匹配分数降序、总价升序排列（高分完全匹配优先）
+        all_matches.sort(key=lambda x: (-x.get("_match_score", 0), x["platform_price"] + x["shipping_fee"]))
+        cheapest = all_matches[0]
+        # 最贵/最便宜按实际总价独立计算
+        actual_cheapest = min(all_matches, key=lambda x: x["platform_price"] + x["shipping_fee"])
+        actual_most_expensive = max(all_matches, key=lambda x: x["platform_price"] + x["shipping_fee"])
+        avg_price = sum(m["platform_price"] for m in all_matches) / len(all_matches)
+
         return {
             "product_name": product_name,
             "found": True,
-            "valid_platforms": len(valid_results),
-            "all_results": valid_results,
-            "cheapest": {
-                "platform": cheapest["platform_name"],
-                "platform_id": cheapest["platform_id"],
-                "price": cheapest["platform_price"],
-                "stock": cheapest["stock"],
-                "shipping_fee": cheapest["shipping_fee"],
-                "total_price": cheapest["platform_price"] + cheapest["shipping_fee"]
-            },
-            "most_expensive": {
-                "platform": most_expensive["platform_name"],
-                "platform_id": most_expensive["platform_id"],
-                "price": most_expensive["platform_price"],
-                "stock": most_expensive["stock"],
-                "shipping_fee": most_expensive["shipping_fee"],
-                "total_price": most_expensive["platform_price"] + most_expensive["shipping_fee"]
-            },
+            "total_matches": len(all_matches),
+            "platform_count": len(platform_results),
+            "platform_results": platform_results,
+            "all_matches": all_matches,
+            "cheapest": cheapest,
+            "most_expensive": actual_most_expensive,
             "average_price": round(avg_price, 2),
             "price_range": {
-                "min": cheapest["platform_price"],
-                "max": most_expensive["platform_price"],
-                "diff": round(most_expensive["platform_price"] - cheapest["platform_price"], 2)
+                "min": actual_cheapest["platform_price"] + actual_cheapest["shipping_fee"],
+                "max": actual_most_expensive["platform_price"] + actual_most_expensive["shipping_fee"],
+                "diff": round(
+                    (actual_most_expensive["platform_price"] + actual_most_expensive["shipping_fee"]) -
+                    (actual_cheapest["platform_price"] + actual_cheapest["shipping_fee"]), 2
+                )
             }
         }
     
@@ -282,45 +290,63 @@ def format_comparison_result(comparison: Dict) -> str:
     """格式化比价结果为易读文本"""
     if not comparison["found"]:
         return comparison["message"]
-    
+
     lines = []
-    lines.append(f"📊 商品「{comparison['product_name']}」多平台比价结果")
-    lines.append("=" * 70)
-    
+    product_name = comparison["product_name"]
+    total = comparison["total_matches"]
     cheapest = comparison["cheapest"]
-    most_expensive = comparison["most_expensive"]
-    
-    lines.append(f"🏆 最划算: {cheapest['platform']} - ¥{cheapest['price']}")
-    if cheapest['shipping_fee'] > 0:
-        lines.append(f"   运费: ¥{cheapest['shipping_fee']}, 总计: ¥{cheapest['total_price']}")
-    lines.append(f"   库存: {cheapest['stock']}件")
-    
+    price_range = comparison["price_range"]
+
+    # 标题和一句话结论
+    lines.append(f"📊 {product_name} 比价结果")
     lines.append("")
-    lines.append(f"💎 最高价: {most_expensive['platform']} - ¥{most_expensive['price']}")
-    if most_expensive['shipping_fee'] > 0:
-        lines.append(f"   运费: ¥{most_expensive['shipping_fee']}, 总计: ¥{most_expensive['total_price']}")
-    
-    lines.append("")
-    lines.append(f"📈 价格区间: ¥{comparison['price_range']['min']} ~ ¥{comparison['price_range']['max']}")
-    lines.append(f"📉 价格差异: ¥{comparison['price_range']['diff']}")
-    lines.append(f"📊 平均价格: ¥{comparison['average_price']}")
-    lines.append("")
-    lines.append("📋 各平台详情:")
-    lines.append("-" * 70)
-    
-    for result in comparison["all_results"]:
-        platform = result["platform_name"]
-        config = get_platform_config(result["platform_id"])
+
+    cheapest_total = cheapest["platform_price"] + cheapest["shipping_fee"]
+    lines.append(
+        f"🏆 最划算：{cheapest['platform_name']} ¥{cheapest['platform_price']}"
+    )
+    if cheapest["shipping_fee"] > 0:
+        lines[-1] += f"（含运费 ¥{cheapest['shipping_fee']}，合计 ¥{cheapest_total}）"
+    lines.append(f"   库存 {cheapest['stock']} 件 | 颜色 {cheapest.get('color', '-')} | 内存 {cheapest.get('memory', '-')}")
+
+    # 各平台匹配商品
+    platform_results = comparison.get("platform_results", {})
+    # 按最便宜平台排
+    sorted_platforms = sorted(
+        platform_results.items(),
+        key=lambda kv: min(m["platform_price"] + m["shipping_fee"] for m in kv[1])
+    )
+
+    for platform_id, matches in sorted_platforms:
+        if not matches:
+            continue
+        config = get_platform_config(platform_id)
         icon = config.get("icon", "🛒")
-        price = result["platform_price"]
-        total = result["platform_price"] + result["shipping_fee"]
-        stock = result["stock"]
-        in_stock = "有货" if result["is_in_stock"] else "缺货"
-        
-        line = f"{icon} {platform:<10} ¥{price:<10}"
-        if result["shipping_fee"] > 0:
-            line += f" (+¥{result['shipping_fee']}运费 = ¥{total})"
-        line += f" | 库存: {stock} | {in_stock}"
-        lines.append(line)
-    
+        name = config.get("name", platform_id)
+
+        if len(matches) == 1:
+            m = matches[0]
+            ship = f" +运费¥{m['shipping_fee']}" if m["shipping_fee"] > 0 else ""
+            lines.append(
+                f"  {icon} {name:<6} ¥{m['platform_price']:<8}{ship}  "
+                f"库存{m['stock']} | {m.get('color','-')}/{m.get('memory','-')}"
+            )
+        else:
+            lines.append(f"  {icon} {name}（{len(matches)} 个匹配）")
+            for m in matches[:5]:  # 最多展示 5 个
+                ship = f" +运费¥{m['shipping_fee']}" if m["shipping_fee"] > 0 else ""
+                lines.append(
+                    f"     ¥{m['platform_price']:<8} {m['product_name']}{ship}"
+                )
+            if len(matches) > 5:
+                lines.append(f"     ... 还有 {len(matches) - 5} 个匹配")
+
+    lines.append("")
+    lines.append(
+        f"💰 共 {total} 个匹配 | "
+        f"均价 ¥{comparison['average_price']} | "
+        f"价差 ¥{price_range['diff']} "
+        f"（¥{price_range['min']} ~ ¥{price_range['max']}）"
+    )
+
     return "\n".join(lines)
