@@ -37,7 +37,17 @@ def _parse_attrs_from_query(raw_query: str, llm_client: OpenAI, model: str) -> D
   "color": "颜色（如黑色、白色、蓝色，未提及填""）",
   "memory": "内存或容量（如128GB、256GB、512GB，未提及填""）",
   "category": "品类（如手机、平板、耳机，不确定填""）"
-}}"""
+}}
+
+重要：请将以下口语化/别名替换为标准商品名称：
+- "水果手机"、"苹果手机" → "iPhone"
+- "水果手表"、"苹果手表"、"苹果表" → "Apple Watch"
+- "水果平板"、"苹果平板" → "iPad"
+- "华为手机" → "华为"
+- "小米手机" → "小米"
+- "ip15" → "iPhone 15"
+- "米14" → "小米14"
+- 类似常见简称也请替换为标准名称"""
 
     try:
         resp = llm_client.chat.completions.create(
