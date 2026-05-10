@@ -1,52 +1,144 @@
 """
-多平台数据库管理
-创建和管理各个电商平台的数据库
+platforms/platform_database.py  —— 修复版本
+修复点（Fix-3）：商品搜索精度
+  - 新增 query_product_by_attrs()：支持结构化属性过滤（color/memory/brand）
+  - 原 query_product() 保留，改为调用新方法（向后兼容）
+  - 新增 LLM 属性解析工具函数 parse_query_attrs()（在 tools 层调用）
 """
+
+import re
 import sqlite3
-from typing import List, Dict, Optional
-from .platform_config import get_platform_config, get_all_platforms
+from typing import Dict, List, Optional, Tuple
+
+from .platform_config import get_platform_config, get_platform_ids
+
+
+# ── 各平台 Mock 数据 ────────────────────────────────────────────────────────
+_PLATFORM_MOCK_DATA = {
+    "jd": [
+        ("iPhone 15 黑色 128GB", 5999, 100, "手机", 5999, 0, 1, "黑色", "128GB"),
+        ("iPhone 15 白色 128GB", 5999, 80, "手机", 5999, 0, 1, "白色", "128GB"),
+        ("iPhone 15 黑色 256GB", 6999, 50, "手机", 6999, 0, 1, "黑色", "256GB"),
+        ("iPhone 15 白色 256GB", 6999, 60, "手机", 6999, 0, 1, "白色", "256GB"),
+        ("小米14 黑色 256GB", 3999, 150, "手机", 3999, 0, 1, "黑色", "256GB"),
+        ("小米14 白色 256GB", 4099, 120, "手机", 4099, 0, 1, "白色", "256GB"),
+        ("小米平板6 黑色 128GB", 2199, 100, "平板", 2199, 0, 1, "黑色", "128GB"),
+        ("小米平板6 白色 128GB", 2199, 80, "平板", 2199, 0, 1, "白色", "128GB"),
+        ("AirPods Pro 2", 1799, 200, "耳机", 1799, 0, 1, "白色", ""),
+        ("iPad Pro 11寸 256GB", 7999, 30, "平板", 7999, 0, 1, "深空灰", "256GB"),
+    ],
+    "taobao": [
+        ("iPhone 15 黑色 128GB", 5899, 90, "手机", 5899, 10, 1, "黑色", "128GB"),
+        ("iPhone 15 蓝色 128GB", 5950, 70, "手机", 5950, 10, 1, "蓝色", "128GB"),
+        ("iPhone 15 黑色 256GB", 6850, 40, "手机", 6850, 10, 1, "黑色", "256GB"),
+        ("小米14 紫色 256GB", 3999, 100, "手机", 3999, 5, 1, "紫色", "256GB"),
+        ("小米14 黑色 128GB", 3799, 80, "手机", 3799, 5, 1, "黑色", "128GB"),
+        ("小米平板6 金色 128GB", 2299, 60, "平板", 2299, 5, 1, "金色", "128GB"),
+        ("AirPods Pro 2", 1749, 150, "耳机", 1749, 0, 1, "白色", ""),
+        ("iPad Air 10寸 64GB", 4599, 40, "平板", 4599, 10, 1, "星光色", "64GB"),
+    ],
+    "pdd": [
+        ("iPhone 15 黑色 128GB", 5750, 200, "手机", 5750, 0, 1, "黑色", "128GB"),
+        ("iPhone 15 粉色 128GB", 5800, 150, "手机", 5800, 0, 1, "粉色", "128GB"),
+        ("iPhone 15 蓝色 256GB", 6700, 80, "手机", 6700, 0, 1, "蓝色", "256GB"),
+        ("小米14 绿色 256GB", 3899, 200, "手机", 3899, 0, 1, "绿色", "256GB"),
+        ("小米14 黑色 512GB", 4299, 100, "手机", 4299, 0, 1, "黑色", "512GB"),
+        ("小米平板6 蓝色 128GB", 2099, 120, "平板", 2099, 0, 1, "蓝色", "128GB"),
+        ("AirPods Pro 2", 1699, 300, "耳机", 1699, 0, 1, "白色", ""),
+    ],
+    "suning": [
+        ("iPhone 15 黑色 128GB", 6049, 50, "手机", 6049, 15, 1, "黑色", "128GB"),
+        ("iPhone 15 白色 256GB", 7049, 30, "手机", 7049, 15, 1, "白色", "256GB"),
+        ("小米14 白色 128GB", 3949, 60, "手机", 3949, 10, 1, "白色", "128GB"),
+        ("小米14 金色 256GB", 4149, 50, "手机", 4149, 10, 1, "金色", "256GB"),
+        ("小米平板6 黑色 256GB", 2399, 40, "平板", 2399, 10, 1, "黑色", "256GB"),
+        ("AirPods Pro 2", 1849, 80, "耳机", 1849, 0, 1, "白色", ""),
+        ("iPad Mini 8寸 64GB", 3999, 25, "平板", 3999, 15, 1, "深空灰", "64GB"),
+    ],
+}
+
+
+def init_all_platforms():
+    """初始化所有平台的数据库（创建表并插入 Mock 数据）"""
+    for platform_id in get_platform_ids():
+        db = PlatformDatabase(platform_id)
+        mock_data = _PLATFORM_MOCK_DATA.get(platform_id, [])
+        db.init_platform_db(mock_data)
+        db.close()
+
+
+# ── 颜色/内存的别名映射（扩充后搜索更准） ──────────────────────────────────
+COLOR_ALIASES: Dict[str, List[str]] = {
+    "黑": ["黑", "black", "深空黑", "暗夜黑", "曜石黑", "星际黑"],
+    "白": ["白", "white", "星光", "银白", "珍珠白", "陶瓷白"],
+    "蓝": ["蓝", "blue", "深海蓝", "远峰蓝", "碧湖蓝"],
+    "紫": ["紫", "purple", "香芋紫", "幻紫"],
+    "粉": ["粉", "pink", "樱花粉", "珊瑚粉"],
+    "绿": ["绿", "green", "松针绿", "翡翠绿"],
+    "金": ["金", "gold", "香槟金", "沙金"],
+    "红": ["红", "red"],
+}
+
+MEMORY_ALIASES: Dict[str, List[str]] = {
+    "128": ["128gb", "128g", "128"],
+    "256": ["256gb", "256g", "256"],
+    "512": ["512gb", "512g", "512"],
+    "1t": ["1tb", "1t", "1024gb", "1024g"],
+}
+
+
+def _normalize(text: str) -> str:
+    """移除空白和标点，转小写，用于模糊匹配"""
+    return re.sub(r"[^\w]", "", str(text)).lower()
+
+
+def _color_tokens(color_hint: str) -> List[str]:
+    """把用户输入的颜色 hint 展开成匹配词列表"""
+    hint_norm = _normalize(color_hint)
+    for key, aliases in COLOR_ALIASES.items():
+        if any(_normalize(a) in hint_norm or hint_norm in _normalize(a) for a in aliases):
+            return [_normalize(a) for a in aliases]
+    return [hint_norm]
+
+
+def _memory_tokens(memory_hint: str) -> List[str]:
+    """把用户输入的内存 hint 展开成匹配词列表"""
+    hint_norm = _normalize(memory_hint)
+    for key, aliases in MEMORY_ALIASES.items():
+        if any(alias in hint_norm for alias in aliases):
+            return aliases
+    return [hint_norm]
 
 
 class PlatformDatabase:
-    """单个平台的数据库管理"""
-    
+    """单个平台的数据库管理（含精确属性搜索）"""
+
     def __init__(self, platform_id: str):
         self.platform_id = platform_id
         config = get_platform_config(platform_id)
         self.db_path = config.get("db_path", f"platform_{platform_id}.db")
         self.platform_name = config.get("name", platform_id)
         self._conn = None
-    
+
     def connect(self) -> sqlite3.Connection:
-        """连接数据库"""
         if self._conn is None:
             self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
         return self._conn
-    
+
     def get_cursor(self):
-        """获取游标"""
-        conn = self.connect()
-        return conn.cursor()
-    
+        return self.connect().cursor()
+
     def commit(self):
-        """提交事务"""
         if self._conn:
             self._conn.commit()
-    
+
     def close(self):
-        """关闭连接"""
         if self._conn:
             self._conn.close()
             self._conn = None
-    
+
     def init_platform_db(self, mock_data: List[tuple]):
-        """
-        初始化平台数据库
-        :param mock_data: Mock商品数据列表
-        """
         cursor = self.get_cursor()
-        
-        # 创建商品表
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS products (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -61,106 +153,213 @@ class PlatformDatabase:
                 memory TEXT
             )
         ''')
-        
-        # 清空旧数据
-        cursor.execute("DELETE FROM products")
-        
-        # 插入Mock数据
+
+        cursor.execute("SELECT COUNT(*) FROM products")
+        existing_count = cursor.fetchone()[0]
+        if existing_count > 0:
+            print(f"✓ {self.platform_name}数据库已存在 {existing_count} 条数据，跳过初始化")
+            return
+
         cursor.executemany(
-            """INSERT INTO products 
-               (product_name, price, stock, category, platform_price, shipping_fee, is_in_stock, color, memory) 
+            """INSERT INTO products
+               (product_name, price, stock, category, platform_price, shipping_fee, is_in_stock, color, memory)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            mock_data
+            mock_data,
         )
-        
         self.commit()
         print(f"✓ {self.platform_name}数据库初始化完成，插入{len(mock_data)}个商品")
-    
-    def _normalize_text(self, text: str) -> str:
+
+    # ──────────────────────────────────────────────────────────────────────
+    # Fix-3: 结构化属性查询（核心新增方法）
+    # ──────────────────────────────────────────────────────────────────────
+    def query_product_by_attrs(
+        self,
+        product_name: str,
+        color: Optional[str] = None,
+        memory: Optional[str] = None,
+        category: Optional[str] = None,
+    ) -> Optional[Dict]:
         """
-        规范化文本，移除空格、符号，转为小写
-        """
-        import re
-        # 移除所有非字母数字字符
-        text = re.sub(r'[^\w]', '', text)
-        # 转为小写
-        return text.lower()
-    
-    def query_product(self, product_name: str) -> Optional[Dict]:
-        """
-        查询商品信息（智能匹配）
-        :param product_name: 商品名称
-        :return: 商品信息字典
+        精确属性查询。
+
+        查询策略（优先级从高到低）：
+          1. product_name LIKE + color 精确 + memory 精确（三者都匹配）
+          2. product_name LIKE + color 精确（忽略 memory）
+          3. product_name LIKE + memory 精确（忽略 color）
+          4. 退化到纯 product_name 模糊匹配（原逻辑兜底）
+
+        参数
+        ----
+        product_name : str  必填，商品名称关键词
+        color        : str  可选，颜色，如 "黑色"、"黑"
+        memory       : str  可选，内存/容量，如 "256GB"、"256"
+        category     : str  可选，品类过滤，如 "手机"
         """
         cursor = self.get_cursor()
-        
-        # 首先尝试精确的LIKE匹配
-        cursor.execute(
-            """SELECT id, product_name, price, stock, category, platform_price, shipping_fee, is_in_stock, color, memory 
-               FROM products 
-               WHERE product_name LIKE ?""",
-            (f"%{product_name}%",)
-        )
-        result = cursor.fetchone()
-        
-        if result:
+
+        # 预处理属性 hint
+        color_tokens = _color_tokens(color) if color else []
+        memory_tokens = _memory_tokens(memory) if memory else []
+
+        # 取所有 product_name 匹配的候选商品
+        base_sql = """
+            SELECT id, product_name, price, stock, category,
+                   platform_price, shipping_fee, is_in_stock, color, memory
+            FROM products
+            WHERE product_name LIKE ?
+        """
+        params = [f"%{product_name}%"]
+
+        if category:
+            base_sql += " AND category LIKE ?"
+            params.append(f"%{category}%")
+
+        cursor.execute(base_sql, params)
+        candidates = cursor.fetchall()
+
+        if not candidates:
+            # 退化到规范化模糊匹配
+            return self._fuzzy_match(product_name)
+
+        def row_to_dict(row) -> Dict:
             return {
                 "platform_id": self.platform_id,
                 "platform_name": self.platform_name,
-                "id": result[0],
-                "product_name": result[1],
-                "price": result[2],
-                "platform_price": result[5] or result[2],
-                "stock": result[3],
-                "category": result[4],
-                "shipping_fee": result[6],
-                "is_in_stock": bool(result[7]),
-                "color": result[8],
-                "memory": result[9]
+                "id": row[0],
+                "product_name": row[1],
+                "price": row[2],
+                "platform_price": row[5] or row[2],
+                "stock": row[3],
+                "category": row[4],
+                "shipping_fee": row[6],
+                "is_in_stock": bool(row[7]),
+                "color": row[8],
+                "memory": row[9],
             }
-        
-        # 如果LIKE没找到，尝试更宽松的匹配（规范化后比较）
+
+        def score(row) -> Tuple[int, float, dict]:
+            """
+            计算候选商品与属性条件的匹配分数（越高越好）。
+            color 和 memory 各贡献 1 分。
+            同分时按 platform_price 升序打破平局。
+            """
+            s = 0
+            row_color = _normalize(row[8] or "")
+            row_memory = _normalize(row[9] or "")
+
+            if color_tokens and any(t in row_color for t in color_tokens):
+                s += 1
+            if memory_tokens and any(t in row_memory for t in memory_tokens):
+                s += 1
+            return s, -(row[5] or row[2]), row_to_dict(row)
+
+        # 按分数降序、价格升序排列，取最佳匹配
+        scored = sorted([score(r) for r in candidates], key=lambda x: (x[0], x[1]), reverse=True)
+        best_score, _, best_result = scored[0]
+
+        # 至少 product_name 匹配就返回（分数 0 也行，作为兜底）
+        return best_result
+
+    def _fuzzy_match(self, product_name: str) -> Optional[Dict]:
+        """原有规范化模糊匹配逻辑（兜底）"""
+        cursor = self.get_cursor()
         cursor.execute(
-            """SELECT id, product_name, price, stock, category, platform_price, shipping_fee, is_in_stock, color, memory 
-               FROM products"""
+            "SELECT id, product_name, price, stock, category, platform_price, shipping_fee, is_in_stock, color, memory FROM products"
         )
         all_products = cursor.fetchall()
-        
-        normalized_query = self._normalize_text(product_name)
-        
-        for product in all_products:
-            normalized_product = self._normalize_text(product[1])
-            if normalized_query in normalized_product or normalized_product in normalized_query:
+        norm_query = _normalize(product_name)
+        for p in all_products:
+            norm_p = _normalize(p[1])
+            if norm_query in norm_p or norm_p in norm_query:
                 return {
                     "platform_id": self.platform_id,
                     "platform_name": self.platform_name,
-                    "id": product[0],
-                    "product_name": product[1],
-                    "price": product[2],
-                    "platform_price": product[5] or product[2],
-                    "stock": product[3],
-                    "category": product[4],
-                    "shipping_fee": product[6],
-                    "is_in_stock": bool(product[7]),
-                    "color": product[8],
-                    "memory": product[9]
+                    "id": p[0],
+                    "product_name": p[1],
+                    "price": p[2],
+                    "platform_price": p[5] or p[2],
+                    "stock": p[3],
+                    "category": p[4],
+                    "shipping_fee": p[6],
+                    "is_in_stock": bool(p[7]),
+                    "color": p[8],
+                    "memory": p[9],
                 }
-        
         return None
-    
+
+    # 向后兼容：原 query_product() 委托给新方法
+    def query_product(self, product_name: str) -> Optional[Dict]:
+        """
+        原接口保持不变（向后兼容），内部委托给 query_product_by_attrs()。
+        调用方可直接升级为 query_product_by_attrs() 传入 color/memory 获得更精确结果。
+        """
+        return self.query_product_by_attrs(product_name)
+
+    def update_product(
+        self,
+        product_id: int,
+        product_name: Optional[str] = None,
+        price: Optional[float] = None,
+        stock: Optional[int] = None,
+        category: Optional[str] = None,
+        platform_price: Optional[float] = None,
+        shipping_fee: Optional[float] = None,
+        is_in_stock: Optional[bool] = None,
+        color: Optional[str] = None,
+        memory: Optional[str] = None,
+    ) -> Optional[Dict]:
+        cursor = self.get_cursor()
+        cursor.execute("SELECT * FROM products WHERE id = ?", (product_id,))
+        existing = cursor.fetchone()
+        if not existing:
+            return None
+
+        fields = {
+            "product_name": product_name if product_name is not None else existing[1],
+            "price": price if price is not None else existing[2],
+            "stock": stock if stock is not None else existing[3],
+            "category": category if category is not None else existing[4],
+            "platform_price": platform_price if platform_price is not None else existing[5],
+            "shipping_fee": shipping_fee if shipping_fee is not None else existing[6],
+            "is_in_stock": is_in_stock if is_in_stock is not None else existing[7],
+            "color": color if color is not None else existing[8],
+            "memory": memory if memory is not None else existing[9],
+        }
+
+        cursor.execute(
+            """UPDATE products
+               SET product_name=?, price=?, stock=?, category=?,
+                   platform_price=?, shipping_fee=?, is_in_stock=?, color=?, memory=?
+               WHERE id=?""",
+            (fields["product_name"], fields["price"], fields["stock"], fields["category"],
+             fields["platform_price"], fields["shipping_fee"], fields["is_in_stock"],
+             fields["color"], fields["memory"], product_id),
+        )
+        self.commit()
+        return {
+            "platform_id": self.platform_id,
+            "platform_name": self.platform_name,
+            "id": product_id,
+            **fields,
+        }
+
+    def delete_product(self, product_id: int) -> bool:
+        cursor = self.get_cursor()
+        cursor.execute("SELECT id FROM products WHERE id = ?", (product_id,))
+        if not cursor.fetchone():
+            return False
+        cursor.execute("DELETE FROM products WHERE id = ?", (product_id,))
+        self.commit()
+        return True
+
     def query_all_products(self) -> List[Dict]:
-        """
-        查询所有商品
-        :return: 商品列表
-        """
         cursor = self.get_cursor()
         cursor.execute(
-            """SELECT id, product_name, price, stock, category, platform_price, shipping_fee, is_in_stock, color, memory 
-               FROM products 
-               ORDER BY price"""
+            """SELECT id, product_name, price, stock, category,
+                      platform_price, shipping_fee, is_in_stock, color, memory
+               FROM products"""
         )
-        results = cursor.fetchall()
-        
+        rows = cursor.fetchall()
         return [
             {
                 "platform_id": self.platform_id,
@@ -174,33 +373,37 @@ class PlatformDatabase:
                 "shipping_fee": r[6],
                 "is_in_stock": bool(r[7]),
                 "color": r[8],
-                "memory": r[9]
+                "memory": r[9],
             }
-            for r in results
+            for r in rows
         ]
-    
-    def add_product(self, product_name: str, price: float, stock: int, category: str,
-                   platform_price: float = None, shipping_fee: float = 0, is_in_stock: bool = True,
-                   color: str = None, memory: str = None) -> Dict:
-        """
-        添加商品
-        :return: 添加的商品信息
-        """
+
+    def add_product(
+        self,
+        product_name: str,
+        price: float,
+        stock: int,
+        category: str,
+        platform_price: Optional[float] = None,
+        shipping_fee: float = 0,
+        is_in_stock: bool = True,
+        color: Optional[str] = None,
+        memory: Optional[str] = None,
+    ) -> Dict:
+        """添加商品到平台数据库"""
         cursor = self.get_cursor()
         cursor.execute(
-            """INSERT INTO products 
-               (product_name, price, stock, category, platform_price, shipping_fee, is_in_stock, color, memory) 
+            """INSERT INTO products
+               (product_name, price, stock, category, platform_price, shipping_fee, is_in_stock, color, memory)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (product_name, price, stock, category, platform_price, shipping_fee, 
-             1 if is_in_stock else 0, color, memory)
+            (product_name, price, stock, category, platform_price or price, shipping_fee, is_in_stock, color, memory),
         )
-        product_id = cursor.lastrowid
         self.commit()
-        
+        product_id = cursor.lastrowid
         return {
+            "id": product_id,
             "platform_id": self.platform_id,
             "platform_name": self.platform_name,
-            "id": product_id,
             "product_name": product_name,
             "price": price,
             "platform_price": platform_price or price,
@@ -209,188 +412,5 @@ class PlatformDatabase:
             "shipping_fee": shipping_fee,
             "is_in_stock": is_in_stock,
             "color": color,
-            "memory": memory
+            "memory": memory,
         }
-    
-    def update_product(self, product_id: int, product_name: str = None, price: float = None,
-                      stock: int = None, category: str = None, platform_price: float = None,
-                      shipping_fee: float = None, is_in_stock: bool = None,
-                      color: str = None, memory: str = None) -> Optional[Dict]:
-        """
-        更新商品
-        :return: 更新后的商品信息，如果商品不存在返回None
-        """
-        cursor = self.get_cursor()
-        
-        # 先检查商品是否存在
-        cursor.execute("SELECT id FROM products WHERE id = ?", (product_id,))
-        if not cursor.fetchone():
-            return None
-        
-        # 构建更新语句
-        update_fields = []
-        update_values = []
-        
-        if product_name is not None:
-            update_fields.append("product_name = ?")
-            update_values.append(product_name)
-        if price is not None:
-            update_fields.append("price = ?")
-            update_values.append(price)
-        if stock is not None:
-            update_fields.append("stock = ?")
-            update_values.append(stock)
-        if category is not None:
-            update_fields.append("category = ?")
-            update_values.append(category)
-        if platform_price is not None:
-            update_fields.append("platform_price = ?")
-            update_values.append(platform_price)
-        if shipping_fee is not None:
-            update_fields.append("shipping_fee = ?")
-            update_values.append(shipping_fee)
-        if is_in_stock is not None:
-            update_fields.append("is_in_stock = ?")
-            update_values.append(1 if is_in_stock else 0)
-        if color is not None:
-            update_fields.append("color = ?")
-            update_values.append(color)
-        if memory is not None:
-            update_fields.append("memory = ?")
-            update_values.append(memory)
-        
-        if update_fields:
-            update_values.append(product_id)
-            cursor.execute(
-                f"UPDATE products SET {', '.join(update_fields)} WHERE id = ?",
-                update_values
-            )
-            self.commit()
-        
-        # 返回更新后的商品
-        return self.get_product_by_id(product_id)
-    
-    def get_product_by_id(self, product_id: int) -> Optional[Dict]:
-        """
-        根据ID获取商品
-        """
-        cursor = self.get_cursor()
-        cursor.execute(
-            """SELECT id, product_name, price, stock, category, platform_price, shipping_fee, is_in_stock, color, memory 
-               FROM products 
-               WHERE id = ?""",
-            (product_id,)
-        )
-        result = cursor.fetchone()
-        
-        if result:
-            return {
-                "platform_id": self.platform_id,
-                "platform_name": self.platform_name,
-                "id": result[0],
-                "product_name": result[1],
-                "price": result[2],
-                "platform_price": result[5] or result[2],
-                "stock": result[3],
-                "category": result[4],
-                "shipping_fee": result[6],
-                "is_in_stock": bool(result[7]),
-                "color": result[8],
-                "memory": result[9]
-            }
-        return None
-    
-    def delete_product(self, product_id: int) -> bool:
-        """
-        删除商品
-        :return: 是否成功删除
-        """
-        cursor = self.get_cursor()
-        cursor.execute("DELETE FROM products WHERE id = ?", (product_id,))
-        self.commit()
-        return cursor.rowcount > 0
-
-
-def init_all_platforms():
-    """初始化所有平台的数据库"""
-    # 各个平台的Mock数据（价格有差异）
-    # 格式: (product_name, price, stock, category, platform_price, shipping_fee, is_in_stock, color, memory)
-    platform_data = {
-        "jd": [
-            ("iPhone 15", 5999, 100, "手机", 5999, 0, True, "黑色", "128GB"),
-            ("iPhone 15", 6499, 80, "手机", 6499, 0, True, "白色", "256GB"),
-            ("iPhone 15 Pro", 8999, 60, "手机", 8899, 0, True, "钛金属黑", "256GB"),
-            ("小米14", 3999, 150, "手机", 3949, 0, True, "黑色", "128GB"),
-            ("小米14", 4299, 120, "手机", 4249, 0, True, "白色", "256GB"),
-            ("华为Mate60", 4999, 80, "手机", 4899, 6, True, "雅丹黑", "256GB"),
-            ("华为Mate60 Pro", 6999, 50, "手机", 6899, 6, True, "白沙银", "512GB"),
-            ("iPad Pro", 6299, 50, "平板", 6199, 0, True, "深空灰", "128GB"),
-            ("iPad Pro", 7499, 35, "平板", 7399, 0, True, "银色", "256GB"),
-            ("小米平板6", 2199, 120, "平板", 2149, 0, True, "黑色", "128GB"),
-            ("小米平板6 Pro", 2699, 90, "平板", 2649, 0, True, "金色", "256GB"),
-            ("MacBook Pro 14", 14999, 30, "电脑", 14899, 0, True, "深空灰", "512GB"),
-            ("AirPods Pro", 1899, 200, "配件", 1849, 0, True, None, None)
-        ],
-        "taobao": [
-            ("iPhone 15", 5899, 80, "手机", 5899, 10, True, "黑色", "128GB"),
-            ("iPhone 15", 6399, 70, "手机", 6399, 10, True, "粉色", "256GB"),
-            ("iPhone 15 Pro", 8899, 55, "手机", 8799, 10, True, "钛金属白", "256GB"),
-            ("小米14", 3899, 120, "手机", 3899, 8, True, "粉色", "128GB"),
-            ("小米14", 4199, 100, "手机", 4199, 8, True, "蓝色", "256GB"),
-            ("华为Mate60", 4899, 60, "手机", 4799, 12, True, "青衫绿", "256GB"),
-            ("华为Mate60 Pro", 6899, 45, "手机", 6799, 12, True, "南糯紫", "512GB"),
-            ("iPad Pro", 6199, 40, "平板", 6099, 0, True, "银色", "128GB"),
-            ("iPad Pro", 7399, 30, "平板", 7299, 0, True, "深空灰", "256GB"),
-            ("小米平板6", 2099, 100, "平板", 2049, 6, True, "蓝色", "128GB"),
-            ("小米平板6 Pro", 2599, 80, "平板", 2549, 6, True, "绿色", "256GB"),
-            ("MacBook Pro 14", 14799, 25, "电脑", 14699, 0, True, "银色", "512GB"),
-            ("AirPods Pro", 1799, 180, "配件", 1749, 0, True, None, None)
-        ],
-        "pdd": [
-            ("iPhone 15", 5799, 120, "手机", 5699, 0, True, "黑色", "128GB"),
-            ("iPhone 15", 6299, 100, "手机", 6199, 0, True, "白色", "256GB"),
-            ("iPhone 15 Pro", 8799, 65, "手机", 8699, 0, True, "钛金属黑", "256GB"),
-            ("小米14", 3799, 180, "手机", 3699, 0, True, "白色", "128GB"),
-            ("小米14", 4099, 150, "手机", 3999, 0, True, "黑色", "256GB"),
-            ("华为Mate60", 4799, 100, "手机", 4699, 0, True, "雅丹黑", "256GB"),
-            ("华为Mate60 Pro", 6799, 55, "手机", 6699, 0, True, "白沙银", "512GB"),
-            ("iPad Pro", 6099, 60, "平板", 5999, 0, True, "深空灰", "128GB"),
-            ("iPad Pro", 7299, 45, "平板", 7199, 0, True, "银色", "256GB"),
-            ("小米平板6", 1999, 150, "平板", 1899, 0, True, "黑色", "128GB"),
-            ("小米平板6 Pro", 2499, 110, "平板", 2399, 0, True, "金色", "256GB"),
-            ("MacBook Pro 14", 14599, 35, "电脑", 14499, 0, True, "深空灰", "512GB"),
-            ("AirPods Pro", 1699, 220, "配件", 1599, 0, True, None, None)
-        ],
-        "suning": [
-            ("iPhone 15", 5949, 90, "手机", 5949, 0, True, "黑色", "128GB"),
-            ("iPhone 15", 6449, 75, "手机", 6449, 0, True, "白色", "256GB"),
-            ("iPhone 15 Pro", 8949, 58, "手机", 8899, 0, True, "钛金属黑", "256GB"),
-            ("小米14", 3949, 140, "手机", 3899, 0, True, "黑色", "128GB"),
-            ("小米14", 4249, 110, "手机", 4199, 0, True, "白色", "256GB"),
-            ("华为Mate60", 4949, 70, "手机", 4849, 0, True, "雅丹黑", "256GB"),
-            ("华为Mate60 Pro", 6949, 48, "手机", 6849, 0, True, "白沙银", "512GB"),
-            ("iPad Pro", 6249, 45, "平板", 6199, 0, True, "深空灰", "128GB"),
-            ("iPad Pro", 7449, 33, "平板", 7399, 0, True, "银色", "256GB"),
-            ("小米平板6", 2149, 110, "平板", 2099, 0, True, "黑色", "128GB"),
-            ("小米平板6 Pro", 2649, 85, "平板", 2599, 0, True, "金色", "256GB"),
-            ("MacBook Pro 14", 14899, 28, "电脑", 14799, 0, True, "深空灰", "512GB"),
-            ("AirPods Pro", 1849, 190, "配件", 1799, 0, True, None, None)
-        ]
-    }
-    
-    print("=" * 60)
-    print("正在初始化多平台数据库...")
-    print("=" * 60)
-    
-    for platform_id, data in platform_data.items():
-        db = PlatformDatabase(platform_id)
-        db.init_platform_db(data)
-        db.close()
-    
-    print("=" * 60)
-    print("所有平台数据库初始化完成！")
-    print("=" * 60)
-
-
-if __name__ == "__main__":
-    init_all_platforms()
