@@ -19,7 +19,7 @@ class Settings:
                 "ARK_API_KEY 未设置。请在 .env 文件中配置 ARK_API_KEY=your_key"
             )
         self.base_url = "https://ark.cn-beijing.volces.com/api/v3"
-        self.model = os.getenv("ARK_MODEL", "doubao-seed-1-8-251228")
+        self.model = os.getenv("ARK_MODEL", "doubao-seed-2-0-mini-260428")
         self.client = OpenAI(
             api_key=self.api_key,
             base_url=self.base_url
