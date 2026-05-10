@@ -16,7 +16,7 @@ from database import (
     get_session_messages,
     delete_session
 )
-from tools import tool_registry, init_parallel_agent, cleanup_parallel_agent
+from tools import tool_registry, init_parallel_agent, cleanup_parallel_agent, get_parallel_agent
 from agent import ReActAgent
 from platforms import (
     init_all_platforms,
@@ -29,6 +29,26 @@ from platforms import (
 
 app = Flask(__name__)
 CORS(app)
+
+
+def _safe_float(val, default=None):
+    """安全转换为 float，失败返回 default 或抛出 ValueError"""
+    if val is None or val == "":
+        return default
+    try:
+        return float(val)
+    except (TypeError, ValueError):
+        raise ValueError(f"无法将 '{val}' 转换为数字")
+
+
+def _safe_int(val, default=None):
+    """安全转换为 int，失败返回 default 或抛出 ValueError"""
+    if val is None or val == "":
+        return default
+    try:
+        return int(val)
+    except (TypeError, ValueError):
+        raise ValueError(f"无法将 '{val}' 转换为整数")
 
 # 全局初始化
 settings = None
@@ -95,11 +115,13 @@ def create_product():
         product = add_product(
             db,
             product_name=data['product_name'],
-            price=float(data['price']),
-            stock=int(data['stock']),
-            category=data['category']
+            price=_safe_float(data.get('price'), 0),
+            stock=_safe_int(data.get('stock'), 0),
+            category=data.get('category', '')
         )
         return jsonify({"success": True, "product": product})
+    except (ValueError, KeyError) as e:
+        return jsonify({"success": False, "error": f"参数错误: {e}"}), 400
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 400
 
@@ -195,11 +217,10 @@ def multi_platform_compare():
         }), 400
     
     try:
-        parallel_agent = PlatformParallelAgent()
+        parallel_agent = get_parallel_agent()
         comparison = parallel_agent.compare_product_price(product_name)
         formatted_text = format_comparison_result(comparison)
-        parallel_agent.close()
-        
+
         return jsonify({
             "success": True,
             "product_name": product_name,
@@ -217,10 +238,9 @@ def multi_platform_compare():
 def get_multi_platform_products():
     """获取所有平台的商品"""
     try:
-        parallel_agent = PlatformParallelAgent()
+        parallel_agent = get_parallel_agent()
         result = parallel_agent.query_all_products_parallel()
-        parallel_agent.close()
-        
+
         return jsonify({
             "success": True,
             "data": result
@@ -262,24 +282,31 @@ def add_platform_product(platform_id):
     try:
         data = request.json
         platform_db = PlatformDatabase(platform_id)
-        
+
+        price = _safe_float(data.get('price'), 0)
+        platform_price = _safe_float(data.get('platform_price') or data.get('price'))
         product = platform_db.add_product(
-            product_name=data['product_name'],
-            price=float(data['price']),
-            stock=int(data['stock']),
-            category=data['category'],
-            platform_price=float(data.get('platform_price', data['price'])) if data.get('platform_price') else None,
-            shipping_fee=float(data.get('shipping_fee', 0)),
+            product_name=data.get('product_name', ''),
+            price=price,
+            stock=_safe_int(data.get('stock'), 0),
+            category=data.get('category', ''),
+            platform_price=platform_price,
+            shipping_fee=_safe_float(data.get('shipping_fee'), 0),
             is_in_stock=bool(data.get('is_in_stock', True)),
             color=data.get('color'),
             memory=data.get('memory')
         )
         platform_db.close()
-        
+
         return jsonify({
             "success": True,
             "product": product
         })
+    except (ValueError, KeyError) as e:
+        return jsonify({
+            "success": False,
+            "error": f"参数错误: {e}"
+        }), 400
     except Exception as e:
         return jsonify({
             "success": False,
@@ -293,21 +320,21 @@ def update_platform_product(platform_id, product_id):
     try:
         data = request.json
         platform_db = PlatformDatabase(platform_id)
-        
+
         product = platform_db.update_product(
             product_id=product_id,
             product_name=data.get('product_name'),
-            price=float(data['price']) if data.get('price') is not None else None,
-            stock=int(data['stock']) if data.get('stock') is not None else None,
+            price=_safe_float(data.get('price')),
+            stock=_safe_int(data.get('stock')),
             category=data.get('category'),
-            platform_price=float(data['platform_price']) if data.get('platform_price') is not None else None,
-            shipping_fee=float(data['shipping_fee']) if data.get('shipping_fee') is not None else None,
-            is_in_stock=bool(data['is_in_stock']) if data.get('is_in_stock') is not None else None,
+            platform_price=_safe_float(data.get('platform_price')),
+            shipping_fee=_safe_float(data.get('shipping_fee')),
+            is_in_stock=None if data.get('is_in_stock') is None else bool(data['is_in_stock']),
             color=data.get('color'),
             memory=data.get('memory')
         )
         platform_db.close()
-        
+
         if product:
             return jsonify({
                 "success": True,
@@ -318,6 +345,11 @@ def update_platform_product(platform_id, product_id):
                 "success": False,
                 "error": "商品不存在"
             }), 404
+    except (ValueError, KeyError) as e:
+        return jsonify({
+            "success": False,
+            "error": f"参数错误: {e}"
+        }), 400
     except Exception as e:
         return jsonify({
             "success": False,

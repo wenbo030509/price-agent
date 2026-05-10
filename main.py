@@ -1,5 +1,5 @@
 from config import Settings
-from tools import tool_registry, init_parallel_agent
+from tools import tool_registry, init_parallel_agent, cleanup_parallel_agent
 from platforms import init_all_platforms
 from agent import ReActAgent
 
@@ -22,27 +22,30 @@ def main():
     )
 
     print("请输入你的问题（输入 'quit' 或 'exit' 退出）：")
-    while True:
-        try:
-            user_query = input("\n> ").strip()
+    try:
+        while True:
+            try:
+                user_query = input("\n> ").strip()
 
-            if user_query.lower() in ["quit", "exit"]:
-                print("再见！")
+                if user_query.lower() in ["quit", "exit"]:
+                    print("再见！")
+                    break
+
+                if not user_query:
+                    print("请输入有效的问题")
+                    continue
+
+                print(f"\n用户问题：{user_query}")
+                answer = agent.run(user_query, verbose=True)
+                print(f"\n【Final Answer】{answer}")
+
+            except KeyboardInterrupt:
+                print("\n\n再见！")
                 break
-
-            if not user_query:
-                print("请输入有效的问题")
-                continue
-
-            print(f"\n用户问题：{user_query}")
-            answer = agent.run(user_query, verbose=True)
-            print(f"\n【Final Answer】{answer}")
-
-        except KeyboardInterrupt:
-            print("\n\n再见！")
-            break
-        except Exception as e:
-            print(f"\n发生错误：{str(e)}")
+            except Exception as e:
+                print(f"\n发生错误：{str(e)}")
+    finally:
+        cleanup_parallel_agent()
 
 
 if __name__ == "__main__":
