@@ -4,7 +4,7 @@
 """
 import concurrent.futures
 import threading
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional
 from .platform_config import get_platform_config, get_platform_ids
 from .platform_database import PlatformDatabase
 
@@ -27,7 +27,25 @@ class PlatformAgent:
             except Exception as e:
                 print(f"⚠️  {self.config['name']}查询出错: {e}")
                 return None
-    
+
+    def query_product_by_attrs(
+        self,
+        product_name: str,
+        color: Optional[str] = None,
+        memory: Optional[str] = None,
+    ) -> Optional[Dict]:
+        """按属性查询单个商品"""
+        with self._lock:
+            try:
+                return self.db.query_product_by_attrs(
+                    product_name=product_name,
+                    color=color,
+                    memory=memory,
+                )
+            except Exception as e:
+                print(f"⚠️  {self.config['name']}查询出错: {e}")
+                return None
+
     def query_all_products(self) -> List[Dict]:
         """查询所有商品"""
         with self._lock:
@@ -146,20 +164,48 @@ class PlatformParallelAgent:
             "errors": errors
         }
     
-    def compare_product_price(self, product_name: str, timeout: int = 10) -> Dict:
+    def compare_product_price(
+        self,
+        product_name: str,
+        color: Optional[str] = None,
+        memory: Optional[str] = None,
+        timeout: int = 10
+    ) -> Dict:
         """
         比价查询：找出最低价和最高价的平台
         :param product_name: 商品名称
+        :param color: 可选的商品颜色属性
+        :param memory: 可选的商品内存属性
         :param timeout: 超时时间（秒）
         :return: 比价结果
         """
-        query_result = self.query_product_parallel(product_name, timeout)
-        results = query_result["results"]
-        
-        valid_results = []
-        for platform_id, result in results.items():
-            if result.get("found", True) and "price" in result:
-                valid_results.append(result)
+        executor = self._get_executor()
+        futures = {}
+
+        for platform_id, agent in self.agents.items():
+            future = executor.submit(
+                agent.query_product_by_attrs,
+                product_name,
+                color=color,
+                memory=memory,
+            )
+            futures[future] = platform_id
+
+        results = {}
+        errors = {}
+
+        for future in concurrent.futures.as_completed(futures, timeout=timeout):
+            platform_id = futures[future]
+            try:
+                result = future.result()
+                if result and "price" in result:
+                    results[platform_id] = result
+            except concurrent.futures.TimeoutError:
+                errors[platform_id] = "查询超时"
+            except Exception as e:
+                errors[platform_id] = str(e)
+
+        valid_results = list(results.values())
         
         if not valid_results:
             return {
@@ -207,7 +253,7 @@ class PlatformParallelAgent:
     
     def _summarize_results(self, results: Dict) -> Dict:
         """汇总查询结果"""
-        found_count = sum(1 for r in results.values() if r.get("found", True) and "price" in r)
+        found_count = sum(1 for r in results.values() if r.get("found", False) and "price" in r)
         total_count = len(results)
         
         return {
