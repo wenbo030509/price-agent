@@ -13,6 +13,26 @@ let allSessions = [];  // 用于搜索过滤
 
 const platformNames = { 'jd': '京东', 'taobao': '淘宝', 'pdd': '拼多多', 'suning': '苏宁' };
 
+// ── 相对时间格式化 ────────────────────────────────────────────
+
+function relativeTime(dateStr) {
+    const now = new Date();
+    const date = new Date(dateStr);
+    const diff = now - date;
+    const sec = Math.floor(diff / 1000);
+    const min = Math.floor(sec / 60);
+    const hour = Math.floor(min / 60);
+    const day = Math.floor(hour / 24);
+
+    if (sec < 60) return '刚刚';
+    if (min < 60) return `${min}分钟前`;
+    if (hour < 24) return `${hour}小时前`;
+    if (day === 1) return '昨天';
+    if (day < 7) return `${day}天前`;
+    if (day < 30) return `${Math.floor(day / 7)}周前`;
+    return date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' });
+}
+
 // ── 快捷提问 ──────────────────────────────────────────────────
 
 function quickAsk(question) {
@@ -116,7 +136,10 @@ function toggleSidebar() {
 function filterSessions() {
     const query = document.getElementById('sessionSearch').value.trim().toLowerCase();
     if (!query) { renderSessions(allSessions); return; }
-    const filtered = allSessions.filter(s => s.session_id.toLowerCase().includes(query));
+    const filtered = allSessions.filter(s => {
+        const title = (s.title || '').toLowerCase();
+        return title.includes(query);
+    });
     renderSessions(filtered);
 }
 
@@ -151,16 +174,23 @@ async function loadSessions() {
 
 function renderSessions(sessions) {
     const container = document.getElementById('sessionList');
-    container.innerHTML = sessions.map(s => `
-        <div class="session-item ${s.session_id === currentSessionId ? 'active' : ''}"
-             onclick="switchSession('${s.session_id}')">
-            <div class="session-info">
-                <div class="session-title">${escapeHtml(s.session_id.substring(0, 8))}...</div>
-                <div class="session-date">${new Date(s.created_at).toLocaleString('zh-CN')}</div>
+    container.innerHTML = sessions.map(s => {
+        const title = s.title || s.session_id.substring(0, 8) + '...';
+        const safeTitle = escapeHtml(title);
+        const time = relativeTime(s.created_at);
+        return `
+            <div class="session-item ${s.session_id === currentSessionId ? 'active' : ''}"
+                 onclick="switchSession('${s.session_id}')">
+                <div class="session-info">
+                    <div class="session-title" title="${safeTitle}">${safeTitle}</div>
+                    <div class="session-date">${time}</div>
+                </div>
+                <button class="session-delete"
+                        onclick="event.stopPropagation();deleteSession('${s.session_id}')"
+                        title="删除">×</button>
             </div>
-            <button class="session-delete" onclick="event.stopPropagation();deleteSession('${s.session_id}')">×</button>
-        </div>
-    `).join('');
+        `;
+    }).join('');
 }
 
 async function switchSession(sessionId) {

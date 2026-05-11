@@ -128,15 +128,23 @@ def get_all_sessions(db: DatabaseConnection) -> List[Dict]:
     """
     获取所有会话
     :param db: DatabaseConnection实例
-    :return: 会话列表
+    :return: 会话列表（含第一条用户消息作为标题）
     """
     cursor = db.get_cursor()
-    cursor.execute("SELECT session_id, created_at FROM sessions ORDER BY created_at DESC")
+    cursor.execute("""
+        SELECT s.session_id, s.created_at,
+               (SELECT m.content FROM messages m
+                WHERE m.session_id = s.session_id AND m.role = 'user'
+                ORDER BY m.timestamp ASC LIMIT 1) as title
+        FROM sessions s
+        ORDER BY s.created_at DESC
+    """)
     results = cursor.fetchall()
     return [
         {
             "session_id": row[0],
-            "created_at": row[1]
+            "created_at": row[1],
+            "title": row[2] or "新会话"
         }
         for row in results
     ]
