@@ -13,6 +13,9 @@
 - ✅ **多平台比价**：支持京东、淘宝、拼多多、苏宁4个平台并行比价
 - ✅ **多轮对话上下文**：滑动窗口管理历史消息，支持上下文指代（"那小米14呢"）
 - ✅ **Plan-Execute 策略**：复杂 query 自动规划并并行执行工具，简单 query 走传统 ReAct
+- ✅ **自反思纠错**：工具返回空结果时自动放宽条件重试，或引导用户澄清追问
+- ✅ **多模型路由**：不同阶段（Plan/综合/ReAct/解析）可分配不同模型，平衡成本与质量
+- ✅ **强化 System Prompt**：Few-shot 示例 + 输出格式约束 + 错误处理策略 + 追问模板
 
 ### 数据库存储
 - 🗄️ **SQLite文件存储**：每个平台独立数据库 `platform_{jd/taobao/pdd/suning}.db`
@@ -63,6 +66,7 @@ price-agent/
 │   ├── eval_p1_parse.py            # P1 属性解析测试
 │   ├── eval_p2_e2e.py              # P2 端到端测试（ReAct 完整循环）
 │   ├── eval_p3_boundary.py         # P3 能力边界测试
+│   ├── eval_p5_optimization.py     # P5 优化验证（自反思 + Prompt + 依赖注入）
 │   ├── eval_p4_benchmark.py        # P4 回归基准汇总
 │   └── eval_results/               # 评估结果输出
 ├── platform_jd.db                  # 京东平台数据库
@@ -87,12 +91,45 @@ pip install -r requirements.txt
 
 ### 2. 配置API
 
+复制 `.env.example` 为 `.env` 并填写配置：
+
+```bash
+cp .env.example .env
+```
+
 编辑 `.env` 文件：
 
 ```
 # 火山引擎 Ark API 配置
 ARK_API_KEY=your_api_key_here
-ARK_MODEL=doubao-seed-1-8-251228
+
+# 多模型路由（不同阶段可使用不同模型，平衡成本与质量）
+ARK_MODEL=doubao-seed-2-0-pro-260215                 # 默认/ReAct 循环
+ARK_MODEL_PLAN=doubao-seed-2-0-code-preview-260215    # Phase 1 Plan 生成
+ARK_MODEL_SYNTHESIZE=doubao-seed-2-0-pro-260215        # Phase 3 综合回答
+ARK_MODEL_PARSE=doubao-seed-2-0-pro-260215             # 属性解析
+```
+
+**模型路由说明**：
+- `ARK_MODEL`：默认模型，用于常规 ReAct 推理循环和兜底
+- `ARK_MODEL_PLAN`：用于复杂查询的 Phase 1 执行计划生成，推荐使用擅长结构化 JSON 输出的模型
+- `ARK_MODEL_SYNTHESIZE`：用于复杂查询的 Phase 3 综合分析回答，推荐使用推理能力强的模型
+- `ARK_MODEL_PARSE`：用于从用户输入中提取颜色、内存等属性，简单任务推荐轻量模型
+- 以上配置项均为可选，不设置时全部回退到 `ARK_MODEL`
+
+**示例 — 全部使用同一个模型**：
+```
+ARK_API_KEY=your_api_key_here
+ARK_MODEL=your_model_name
+# 不设置 ARK_MODEL_PLAN / ARK_MODEL_SYNTHESIZE / ARK_MODEL_PARSE
+```
+
+**示例 — 按阶段分配不同模型**：
+```
+ARK_API_KEY=your_api_key_here
+ARK_MODEL=fast-cheap-model
+ARK_MODEL_PLAN=json-expert-model
+ARK_MODEL_SYNTHESIZE=powerful-reasoning-model
 ```
 
 ### 3. 启动应用
@@ -348,44 +385,47 @@ python3 db_manager.py
 ## 技术栈
 
 - **Python 3.10+**
-- **OpenAI API (兼容)** - LLM推理
+- **OpenAI API (兼容)** - LLM推理，支持多模型路由
 - **Flask** - Web框架
 - **SQLite** - 数据存储
+- **ThreadPoolExecutor** - 多平台并行查询
 - **Bootstrap 5** - 前端界面
 
 ## 配置说明
 
-可在 `config/settings.py` 中修改配置：
-- API配置
-- 模型名称
-- 最大推理轮数
-- 数据库路径
-- 上下文窗口大小（`MAX_HISTORY_ROUNDS` / `MAX_HISTORY_CHARS`）
-- Plan-Execute 策略（`MAX_PLAN_STEPS` / `COMPLEXITY_KEYWORDS`）
+可在 `config/settings.py` 中修改配置，或通过 `.env` 环境变量覆盖：
+- API Key 和服务地址
+- 多模型路由（`ARK_MODEL` / `ARK_MODEL_PLAN` / `ARK_MODEL_SYNTHESIZE` / `ARK_MODEL_PARSE`）
+- 最大推理轮数（`max_round`）
+- 上下文窗口大小（`max_history_rounds` / `max_history_chars`）
+- Plan-Execute 策略（`max_plan_steps` / `complexity_keywords` / `complexity_patterns`）
+- 自反思重试（`max_reflection_retries` / `auto_relax_attributes`）
 
 ## 评估测试
 
-项目内置 4 阶段评估体系，详见 `评估文档.md`：
+项目内置 5 阶段评估体系，详见 `评估文档.md`：
 
 ```bash
 # 逐阶段执行
-python3 tests/eval_p0_unit.py       # P0 单元测试（无 LLM）
-python3 tests/eval_p1_parse.py      # P1 参数提取测试
-python3 tests/eval_p2_e2e.py        # P2 端到端测试
-python3 tests/eval_p3_boundary.py   # P3 能力边界测试
-python3 tests/eval_p4_benchmark.py  # P4 汇总所有阶段
+python3 tests/eval_p0_unit.py            # P0 单元测试（无 LLM，43 case）
+python3 tests/eval_p1_parse.py           # P1 参数提取测试
+python3 tests/eval_p2_e2e.py             # P2 端到端测试
+python3 tests/eval_p3_boundary.py        # P3 能力边界测试
+python3 tests/eval_p5_optimization.py    # P5 优化验证（自反思 + Prompt + 依赖注入）
+python3 tests/eval_p4_benchmark.py       # P4 汇总所有阶段
 ```
 
-**最新实测结果（2026-05-11）：综合通过率 98.3% (59/60)**
+**最新实测结果（2026-05-11）：综合通过率 99.0% (97/98)**
 
-> 含 Plan-Execute + 多轮对话滑动窗口。复杂 query 自动 Plan-Execute（2 次 LLM），简单 query 走 ReAct。
+> 含 Plan-Execute + 多轮对话滑动窗口 + 自反思纠错 + 多模型路由。
 
 | 阶段 | 通过率 | 说明 |
 |------|--------|------|
-| P0 单元测试 | 100% (18/18) | 数据库 CRUD、打分、并行查询、回归 |
+| P0 单元测试 | 100% (43/43) | 数据库 CRUD、打分、并行查询、回归、复杂度判断、依赖注入、空结果检测、反思消息 |
 | P1 参数提取 | 100% (17/17) | 属性提取 + 品牌别名改写 |
 | P2 端到端 | 94.1% (16/17) | ReAct + Plan-Execute 混合 |
-| P3 能力边界 | 100% (15/15) | 含多轮对话 3 个 case，known_missing=0 |
+| P3 能力边界 | 100% (15/15) | 含多轮对话 3 个 case |
+| P5 优化验证 | 100% (13/13) | 自反思纠错 + System Prompt 质量 + 依赖注入 + 复杂度判断 |
 
 ## 许可证
 
