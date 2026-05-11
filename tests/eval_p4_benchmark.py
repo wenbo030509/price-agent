@@ -16,7 +16,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 def find_latest_reports(results_dir: str = "tests/eval_results"):
     """找出各阶段最新的报告文件"""
     reports = {}
-    for phase in ["P0_unit", "P1_parse", "P2_e2e", "P3_boundary", "P5_optimization"]:
+    for phase in ["P0_unit", "P1_parse", "P2_e2e", "P3_boundary", "P5_optimization", "P6_image"]:
         pattern = os.path.join(results_dir, f"*_{phase}.json")
         files = sorted(glob.glob(pattern))
         if files:
@@ -106,12 +106,13 @@ def main():
     p2 = load_report(reports.get("P2_e2e")) if "P2_e2e" in reports else None
     p3 = load_report(reports.get("P3_boundary")) if "P3_boundary" in reports else None
     p5 = load_report(reports.get("P5_optimization")) if "P5_optimization" in reports else None
+    p6 = load_report(reports.get("P6_image")) if "P6_image" in reports else None
 
     dims = compute_dimension_scores(p0, p1, p2, p3, p5)
 
     # 汇总所有阶段
     all_cases = []
-    for r in [p0, p1, p2, p3, p5]:
+    for r in [p0, p1, p2, p3, p5, p6]:
         if r:
             for c in r["cases"]:
                 c["_phase"] = r["phase"]
@@ -137,7 +138,7 @@ def main():
         "by_dimension": dims,
     }
 
-    for phase, r in [("P0_unit", p0), ("P1_parse", p1), ("P2_e2e", p2), ("P3_boundary", p3), ("P5_optimization", p5)]:
+    for phase, r in [("P0_unit", p0), ("P1_parse", p1), ("P2_e2e", p2), ("P3_boundary", p3), ("P5_optimization", p5), ("P6_image", p6)]:
         if r:
             report["by_phase"][phase] = {
                 "total": r["total"],

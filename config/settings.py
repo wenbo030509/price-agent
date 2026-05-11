@@ -35,6 +35,9 @@ class Settings:
         self.model_parse = os.getenv(
             "ARK_MODEL_PARSE", "doubao-seed-2-0-pro-260215"
         )  # 属性解析（简单提取）
+        self.model_vision = os.getenv(
+            "ARK_VISION_MODEL", "doubao-seed-2-0-pro-260215"
+        )  # 图片识别（多模态模型）
 
         # 共享 client（同 endpoint，只需一个）
         self.client = OpenAI(

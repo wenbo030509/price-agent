@@ -404,6 +404,33 @@ def delete_platform_product(platform_id, product_id):
         }), 500
 
 
+@app.route('/api/image-search', methods=['POST'])
+def image_search():
+    """图片搜索API — 上传图片URL，识别商品并比价"""
+    data = request.json
+    image_url = data.get('image_url')
+
+    if not image_url:
+        return jsonify({
+            "success": False,
+            "error": "请提供图片URL"
+        }), 400
+
+    try:
+        from tools.image_search_tools import search_product_by_image
+        result = search_product_by_image(
+            image_url=image_url,
+            color=data.get('color'),
+            memory=data.get('memory'),
+        )
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
 @app.teardown_appcontext
 def teardown(exception):
     """应用关闭时清理资源"""
