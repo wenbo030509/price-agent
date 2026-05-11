@@ -16,6 +16,8 @@
 - ✅ **自反思纠错**：工具返回空结果时自动放宽条件重试，或引导用户澄清追问
 - ✅ **多模型路由**：不同阶段（Plan/综合/ReAct/解析）可分配不同模型，平衡成本与质量
 - ✅ **强化 System Prompt**：Few-shot 示例 + 输出格式约束 + 错误处理策略 + 追问模板
+- ✅ **图片识物搜索**：上传商品图片 → 多模态 LLM 识别属性 → 全平台比价，拍照搜同款
+- ✅ **图片上传交互**：支持点击上传、Ctrl+V 粘贴、拖拽上传、缩略图预览、点击放大、一键删除
 
 ### 数据库存储
 - 🗄️ **SQLite文件存储**：每个平台独立数据库 `platform_{jd/taobao/pdd/suning}.db`
@@ -55,6 +57,7 @@ price-agent/
 │   ├── __init__.py                 # 工具模块导出
 │   ├── registry.py                 # 工具注册器
 │   └── multi_platform_tools.py     # 多平台比价工具（3个核心工具）
+│   └── image_search_tools.py      # 图片搜索工具（多模态识别→比价）
 ├── templates/
 │   └── index.html                  # 前端页面
 ├── static/
@@ -334,6 +337,21 @@ python3 db_manager.py
     - 评估点：能否保持上下文连贯性
     - 实测结果：Agent 正解理解"那"=最便宜平台，"这两个"=iPhone 15+小米14
 
+#### 第六类：图片识物搜索（测试多模态识别→比价）✅ 已实现
+
+17. **拍照搜同款**
+    ```
+    上传一张 iPhone 15 的实拍图，问"这个在哪买最便宜"
+    ```
+    - 测试工具：`search_product_by_image`
+    - 评估点：多模态识别属性 → 全平台比价 → 最便宜推荐
+
+18. **图片+文字组合查询**
+    ```
+    上传商品图片，追问"要便宜点的"或"只看京东"
+    ```
+    - 评估点：图片识别结果 + 自然语言筛选
+
 ### Web界面功能
 
 - **左侧边栏**：会话历史管理
@@ -346,6 +364,11 @@ python3 db_manager.py
   - 输入问题
   - 查看AI回复
   - 显示完整推理过程
+
+- **聊天输入区**：
+  - 文本输入 + 图片上传（📷按钮 / Ctrl+V粘贴 / 拖拽上传）
+  - 缩略图预览 + 删除 + 点击放大
+  - 每次限一张图片，发送后自动清除
 
 - **右侧面板**：
   - **商品管理**：
@@ -361,7 +384,7 @@ python3 db_manager.py
 
 ### 内置工具
 
-本系统提供3个核心工具，均通过 `@register_tool` 装饰器注册：
+本系统提供4个核心工具，均通过 `@register_tool` 装饰器注册：
 
 1. **multi_platform_price_comparison** - 多平台并行比价
    - 功能：在京东、淘宝、拼多多、苏宁4个平台并行查询商品价格，支持颜色、内存属性精确匹配
@@ -377,6 +400,12 @@ python3 db_manager.py
    - 功能：查询单个平台指定商品的信息，支持颜色、内存属性精确筛选
    - 参数：`platform_id` (平台ID: jd/taobao/pdd/suning)、`product_name` (商品名称)、`color` (可选)、`memory` (可选)
    - 返回：指定平台的商品信息
+
+4. **search_product_by_image** - 图片识物搜索
+   - 功能：接收商品图片URL，多模态 LLM 识别商品属性（品牌、型号、颜色），自动在4个平台比价
+   - 参数：`image_url` (图片URL或 base64 data URL)、`color` (可选，追加颜色偏好)、`memory` (可选)
+   - 返回：识别结果 + 各平台比价数据
+   - 流程：图片 → 多模态识别 → 提取属性 → 文本搜索 → 比价
 
 ### 添加新工具
 
@@ -395,7 +424,7 @@ python3 db_manager.py
 
 可在 `config/settings.py` 中修改配置，或通过 `.env` 环境变量覆盖：
 - API Key 和服务地址
-- 多模型路由（`ARK_MODEL` / `ARK_MODEL_PLAN` / `ARK_MODEL_SYNTHESIZE` / `ARK_MODEL_PARSE`）
+- 多模型路由（`ARK_MODEL` / `ARK_MODEL_PLAN` / `ARK_MODEL_SYNTHESIZE` / `ARK_MODEL_PARSE` / `ARK_VISION_MODEL`）
 - 最大推理轮数（`max_round`）
 - 上下文窗口大小（`max_history_rounds` / `max_history_chars`）
 - Plan-Execute 策略（`max_plan_steps` / `complexity_keywords` / `complexity_patterns`）
@@ -412,12 +441,13 @@ python3 tests/eval_p1_parse.py           # P1 参数提取测试
 python3 tests/eval_p2_e2e.py             # P2 端到端测试
 python3 tests/eval_p3_boundary.py        # P3 能力边界测试
 python3 tests/eval_p5_optimization.py    # P5 优化验证（自反思 + Prompt + 依赖注入）
+python3 tests/eval_p6_image.py           # P6 图片搜索（多模态识别→比价）
 python3 tests/eval_p4_benchmark.py       # P4 汇总所有阶段
 ```
 
-**最新实测结果（2026-05-11）：综合通过率 99.0% (97/98)**
+**最新实测结果（2026-05-11）：综合通过率 99.0% (104/105)**
 
-> 含 Plan-Execute + 多轮对话滑动窗口 + 自反思纠错 + 多模型路由。
+> 含 Plan-Execute + 多轮对话滑动窗口 + 自反思纠错 + 多模型路由 + 图片识物搜索。
 
 | 阶段 | 通过率 | 说明 |
 |------|--------|------|
@@ -426,6 +456,7 @@ python3 tests/eval_p4_benchmark.py       # P4 汇总所有阶段
 | P2 端到端 | 94.1% (16/17) | ReAct + Plan-Execute 混合 |
 | P3 能力边界 | 100% (15/15) | 含多轮对话 3 个 case |
 | P5 优化验证 | 100% (13/13) | 自反思纠错 + System Prompt 质量 + 依赖注入 + 复杂度判断 |
+| P6 图片搜索 | 100% (7/7) | 工具注册、属性解析、E2E 识别→比价 |
 
 ## 许可证
 
