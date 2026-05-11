@@ -750,10 +750,49 @@ body {
 
 .right-panel {
   height: 100vh;
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
   background: var(--bg-card);
   border-left: 1px solid var(--border);
   padding: 16px;
+  overflow: hidden;
+}
+
+.right-panel .tab-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.right-panel .tab-pane {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.right-panel .tab-pane.active {
+  display: flex;
+}
+
+/* 商品 Tab 内部布局 */
+#products {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+#products > :not(#productList):not(.mb-3:has(#productSearch)) {
+  flex-shrink: 0;
+}
+
+/* 商品列表 — 自动填充剩余高度 */
+#productList {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
 }
 
 .right-panel .nav-tabs { border-bottom: 1px solid var(--border); margin-bottom: 14px; }
@@ -791,7 +830,7 @@ body {
   border-color: var(--brand-border);
 }
 
-.product-list { max-height: 360px; overflow-y: auto; }
+.product-list { overflow-y: auto; }
 .product-item {
   padding: 10px 12px;
   border-bottom: 1px solid var(--border-light);
@@ -815,6 +854,9 @@ body {
 .btn-sm.btn-danger { color: var(--error); }
 .btn-sm.btn-danger:hover { background: var(--error-bg); border-color: var(--error); }
 
+/* 比价 Tab — 也滚动 */
+#compare { overflow-y: auto; }
+
 /* 比价结果 */
 .compare-result {
   font-size: 13px;
@@ -823,7 +865,6 @@ body {
   border-radius: var(--radius-sm);
   white-space: pre-wrap;
   line-height: 1.6;
-  max-height: 360px;
   overflow-y: auto;
 }
 
