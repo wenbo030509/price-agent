@@ -291,9 +291,61 @@ def test_e2e_attr(recorder: EvalRecorder, runner: E2ERunner):
         _time.sleep(0.5)
 
 
+def test_e2e_plan_execute(recorder: EvalRecorder, runner: E2ERunner):
+    """P2-5: Plan-Execute 策略专项（复杂 query 应触发 plan 模式）"""
+    cases = [
+        ("PE-01", "对比 iPhone 15 和小米14 的价格",
+         lambda: compute_all_prices("iPhone 15") + compute_all_prices("小米14"),
+         ["mentions_both_products", "price_in_answer"]),
+        ("PE-02", "比较 iPhone 15 和 AirPods Pro 2 哪个更值得买",
+         lambda: compute_all_prices("iPhone 15") + compute_all_prices("AirPods Pro 2"),
+         ["mentions_both_products", "price_in_answer"]),
+        ("PE-03", "分析小米14 和 小米平板6 的价格差异",
+         lambda: compute_all_prices("小米14") + compute_all_prices("小米平板6"),
+         ["mentions_both", "price_in_answer"]),
+    ]
+
+    print("\n--- P2-5: Plan-Execute 策略 ---")
+    for case_id, query, gt_fn, checks in cases:
+        result = runner.run_one(query)
+        answer = result["answer"]
+        ground_truth = gt_fn()
+        prices_in_answer = result["prices"]
+
+        passed = True
+        details = {"query": query, "answer_preview": answer[:150], "checks": {}}
+
+        if "price_in_answer" in checks:
+            ok = len(prices_in_answer) > 0
+            details["checks"]["price_in_answer"] = ok
+            if not ok:
+                passed = False
+
+        if "mentions_both_products" in checks or "mentions_both" in checks:
+            # 检查至少提到两个商品/品牌关键词
+            all_keywords = ["iphone", "苹果", "小米", "airpods", "ipad", "平板"]
+            mentioned = [kw for kw in all_keywords if kw.lower() in answer.lower()]
+            ok = len(mentioned) >= 2
+            details["checks"]["mentions_both"] = ok
+            details["checks"]["mentioned_keywords"] = mentioned
+            if not ok:
+                passed = False
+
+        if ground_truth:
+            no_hallu, _ = detect_hallucination(answer, ground_truth)
+            details["checks"]["no_hallucination"] = no_hallu
+            if not no_hallu:
+                passed = False
+
+        recorder.record(case_id, passed, details)
+        status = "✓" if passed else "✗"
+        print(f"  {status} {case_id}: {query} → {result['total_time_ms']}ms")
+        _time.sleep(0.5)
+
+
 def main():
     print("=" * 60)
-    print("  P2 端到端测试（ReAct 完整循环）")
+    print("  P2 端到端测试（ReAct + Plan-Execute）")
     print("=" * 60)
 
     recorder = EvalRecorder("P2_e2e")
@@ -304,6 +356,7 @@ def main():
         test_e2e_complex(recorder, runner)
         test_e2e_alias(recorder, runner)
         test_e2e_attr(recorder, runner)
+        test_e2e_plan_execute(recorder, runner)
     finally:
         runner.cleanup()
 
