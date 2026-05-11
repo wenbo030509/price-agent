@@ -1,0 +1,76 @@
+{
+  "phase": "P6_image",
+  "total": 7,
+  "passed": 7,
+  "failed": 0,
+  "pass_rate": "100.0%",
+  "duration_ms": 25288,
+  "cases": [
+    {
+      "case_id": "IM-01",
+      "passed": true,
+      "details": {
+        "reason": "search_product_by_image 已注册"
+      }
+    },
+    {
+      "case_id": "IM-02",
+      "passed": true,
+      "details": {
+        "reason": "attrs={'product_name': 'iPhone 15', 'color': '黑色', 'category': '手机', 'brand': 'Apple', 'confidence': 'high'}"
+      }
+    },
+    {
+      "case_id": "IM-03",
+      "passed": true,
+      "details": {
+        "reason": "attrs={'product_name': '', 'color': '', 'category': '', 'brand': '', 'confidence': 'low', 'error': 'API 超时'}"
+      }
+    },
+    {
+      "case_id": "IM-04",
+      "passed": true,
+      "details": {
+        "reason": "attrs={'product_name': '小米14', 'color': '', 'category': '', 'brand': '', 'confidence': 'low'}"
+      }
+    },
+    {
+      "case_id": "IM-05",
+      "passed": true,
+      "details": {
+        "reason": "message=未能从图片中识别出明确的商品信息。请确保图片清晰、商品主体突出，或直接输入商品名称搜索。"
+      }
+    },
+    {
+      "case_id": "IM-E2E-01",
+      "passed": true,
+      "details": {
+        "image_url": "https://img0.baidu.com/it/u=929131657,1065149890&fm=253&app=138&f=JPEG?w=800&h=1",
+        "image_attrs": {
+          "product_name": "iPhone 15",
+          "color": "黑色",
+          "category": "手机",
+          "brand": "Apple",
+          "confidence": "high"
+        },
+        "success": true,
+        "elapsed_ms": 24185,
+        "has_product": true,
+        "has_error": false
+      }
+    },
+    {
+      "case_id": "IM-E2E-02",
+      "passed": true,
+      "details": {
+        "success": true,
+        "found": true,
+        "no_hallucination": true,
+        "hallucinations": []
+      }
+    }
+  ],
+  "scored_total": 7,
+  "scored_passed": 7,
+  "scored_pass_rate": "100.0%"
+}

@@ -1,12 +1,48 @@
 """
 图片搜索工具 — 多模态 LLM 提取商品属性 → 文本搜索链路
 """
+import base64
 import json
+import ssl
+import urllib.request
 from typing import Dict, Optional
 from openai import OpenAI
 
 from .registry import register_tool
 from platforms import PlatformParallelAgent, format_comparison_result
+
+
+# ── 图片预处理 ──────────────────────────────────────────────────────────────
+
+
+def _ensure_base64(image_url: str) -> str:
+    """
+    如果 image_url 是远程 HTTP URL，下载并转为 base64 data URL。
+    如果已经是 data: URL 则直接返回。
+    这样做是因为火山引擎 API 服务器可能无法访问某些外网图片。
+    """
+    if image_url.startswith("data:"):
+        return image_url
+    if not image_url.startswith("http"):
+        return image_url  # 可能是本地路径，直接传
+
+    try:
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        req = urllib.request.Request(image_url, headers={"User-Agent": "Mozilla/5.0"})
+        img_data = urllib.request.urlopen(req, timeout=10, context=ctx).read()
+        img_b64 = base64.b64encode(img_data).decode()
+
+        # 推断 MIME 类型
+        suffix = image_url.split(".")[-1].split("?")[0].lower()
+        mime_map = {"jpg": "jpeg", "jpeg": "jpeg", "png": "png", "webp": "webp", "gif": "gif"}
+        mime = mime_map.get(suffix, "jpeg")
+
+        return f"data:image/{mime};base64,{img_b64}"
+    except Exception:
+        # 下载失败，回退到原始 URL（让 API 自己试）
+        return image_url
 
 
 # ── 图片属性提取 ────────────────────────────────────────────────────────────
@@ -33,13 +69,17 @@ def _extract_attrs_from_image(
 - 只输出商品信息，不要描述图片背景、场景等无关内容
 - 如果图片中有多个商品，只识别最主要/最突出的那个
 - 如果确实无法识别任何商品信息，所有字段填空字符串，confidence 填 low"""
+
+    # 预处理：远程 URL → base64（避免火山服务器下载超时）
+    safe_url = _ensure_base64(image_url)
+
     try:
         resp = client.chat.completions.create(
             model=model,
             messages=[{
                 "role": "user",
                 "content": [
-                    {"type": "image_url", "image_url": {"url": image_url}},
+                    {"type": "image_url", "image_url": {"url": safe_url}},
                     {"type": "text", "text": prompt},
                 ],
             }],
