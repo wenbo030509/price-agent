@@ -77,6 +77,7 @@ class Settings:
         # 自反思重试配置
         self.max_reflection_retries = 2
         self.auto_relax_attributes = True
+        self.max_step_react_rounds = 2  # Plan-Execute 每 Step 的 mini-ReAct 最大轮数
 
 
 # 全局配置实例

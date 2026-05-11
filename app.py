@@ -103,6 +103,7 @@ def initialize():
             "complexity_patterns": getattr(settings, "complexity_patterns", None),
             "max_reflection_retries": getattr(settings, "max_reflection_retries", 2),
             "auto_relax_attributes": getattr(settings, "auto_relax_attributes", True),
+            "max_step_react_rounds": getattr(settings, "max_step_react_rounds", 2),
         },
     )
 

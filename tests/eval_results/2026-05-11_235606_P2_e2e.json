@@ -1,0 +1,230 @@
+{
+  "phase": "P2_e2e",
+  "total": 17,
+  "passed": 17,
+  "failed": 0,
+  "pass_rate": "100.0%",
+  "duration_ms": 551225,
+  "cases": [
+    {
+      "case_id": "E2E-01",
+      "passed": true,
+      "details": {
+        "query": "iPhone 15 在哪个平台最便宜",
+        "answer_preview": "### Final Answer\niPhone 15 在**拼多多**最便宜，黑色128GB版本售价¥5750，免运费，库存200件。\n\n其他平台同配置价格：\n- 淘宝 ¥5899（+¥10运费）\n- 京东 ¥5999（免运费）\n- 苏宁 ¥6049（+¥15运费）",
+        "checks": {
+          "price_in_answer": true,
+          "cheapest_correct": true,
+          "no_hallucination": true
+        },
+        "ground_truth_cheapest": "拼多多 ¥5750.0"
+      }
+    },
+    {
+      "case_id": "E2E-02",
+      "passed": true,
+      "details": {
+        "query": "小米14 的价格",
+        "answer_preview": "### 小米14比价结果\n🏆 **到手最低价**：淘宝 ¥3804（商品价¥3799 + 运费¥5，黑色128GB，库存80件）\n各版本其他平台价格参考：\n- 128GB：苏宁 ¥3959（白色，含运费¥10）\n- 256GB：拼多多 ¥3899（绿色，免运费）、京东 ¥3999（黑色，免运费）、淘",
+        "checks": {
+          "price_in_answer": true,
+          "no_hallucination": true
+        }
+      }
+    },
+    {
+      "case_id": "E2E-03",
+      "passed": true,
+      "details": {
+        "query": "AirPods Pro 2 各平台价格",
+        "answer_preview": "AirPods Pro 2在**拼多多**最便宜，售价¥1699（白色款，免运费）。\n其他平台价格：\n淘宝 ¥1749 | 京东 ¥1799 | 苏宁 ¥1849，均为白色款免运费。\n各平台均价¥1774，最高价差¥150。",
+        "checks": {
+          "price_in_answer": true,
+          "no_hallucination": true
+        }
+      }
+    },
+    {
+      "case_id": "E2E-04",
+      "passed": true,
+      "details": {
+        "query": "iPad Pro 在哪个平台有卖",
+        "answer_preview": "**Final Answer**：目前仅京东平台有在售的iPad Pro，商品规格为11寸 256GB 深空灰，售价为京东 ¥7999，库存30件，免运费。\n其余平台（淘宝、拼多多、苏宁）暂未收录该商品。",
+        "checks": {
+          "price_in_answer": true,
+          "correct_platform": true,
+          "no_hallucination": true
+        }
+      }
+    },
+    {
+      "case_id": "E2E-05",
+      "passed": true,
+      "details": {
+        "query": "所有平台都有什么商品",
+        "answer_preview": "当前4个平台共收录33款商品，覆盖手机、平板、耳机三大品类，具体各平台商品及对应售价如下：\n\n### 🛒 京东（10款）\n- iPhone 15（多配色/容量可选）：¥5999起\n- 小米14（多配色/容量可选）：¥3999起\n- 小米平板6（多配色）：¥2199\n- AirPods Pro 2：¥",
+        "checks": {}
+      }
+    },
+    {
+      "case_id": "E2E-06",
+      "passed": true,
+      "details": {
+        "query": "对比 iPhone 15 和小米14 的价格",
+        "answer_preview": "### 价格对比核心结论\n同128GB基础款配置下，小米14的最低入手价较iPhone 15低1946元。\n---\n#### 🔹 iPhone 15 价格详情\n🏆 最低价：拼多多 ¥5750（黑色128GB，免运费，库存200件）\n其他平台参考价：\n淘宝 ¥5909（黑色128GB，含10元运费）|",
+        "checks": {
+          "mentions_both_products": true,
+          "no_hallucination": true
+        }
+      }
+    },
+    {
+      "case_id": "E2E-07",
+      "passed": true,
+      "details": {
+        "query": "iPhone 15 黑色 256GB 在哪里买最便宜",
+        "answer_preview": "### Final Answer\niPhone 15 黑色 256GB在**淘宝**购买最便宜，商品价格¥6850，加运费¥10，合计到手¥6860，库存40件。\n其他同规格平台价格：京东 ¥6999（免运费，库存50件）。\n补充说明：拼多多、苏宁暂未收录该规格（黑色256GB）的商品，若你可接受蓝",
+        "checks": {
+          "price_in_answer": true,
+          "no_hallucination": true
+        }
+      }
+    },
+    {
+      "case_id": "E2E-08",
+      "passed": true,
+      "details": {
+        "query": "我想买平板，帮我看看各平台有什么",
+        "answer_preview": "目前各平台在售的平板及对应价格如下：\n### 小米平板6系列\n- 拼多多：蓝色 128GB ¥2099（免运费）\n- 京东：黑色/白色 128GB ¥2199（免运费）\n- 淘宝：金色 128GB ¥2299（+¥5运费）\n- 苏宁：黑色 256GB ¥2399（+¥10运费）\n\n### 苹果iPa",
+        "checks": {
+          "has_content": true,
+          "no_hallucination": true
+        }
+      }
+    },
+    {
+      "case_id": "E2E-09",
+      "passed": true,
+      "details": {
+        "query": "小米平板6 蓝色 有没有货",
+        "answer_preview": "**Final Answer**：\n小米平板6蓝色版本目前仅**拼多多**平台有货，对应配置为128GB，售价¥2099，库存120件，免运费。\n京东、淘宝、苏宁平台暂未查询到蓝色版本的小米平板6在售，仅提供黑色、白色、金色等其他颜色版本可选。",
+        "checks": {
+          "price_in_answer": true,
+          "no_hallucination": true
+        }
+      }
+    },
+    {
+      "case_id": "AL-E2E-01",
+      "passed": true,
+      "details": {
+        "query": "水果手机 15 最便宜的平台",
+        "answer_preview": "**Final Answer**：\n你所说的水果手机15（iPhone 15）在**拼多多**最便宜，对应黑色128GB版本售价¥5750，免运费，库存200件。\n同配置128GB版本其他平台价格：\n- 淘宝 ¥5899（+¥10运费）\n- 京东 ¥5999（免运费）\n- 苏宁 ¥6049（+¥15",
+        "checks": {
+          "price_in_answer": true,
+          "no_hallucination": true
+        }
+      }
+    },
+    {
+      "case_id": "AL-E2E-02",
+      "passed": true,
+      "details": {
+        "query": "帮我查下 ip15 白色 256g",
+        "answer_preview": "### 完全匹配你要求的「iPhone 15 白色 256GB」价格如下：\n1. 京东 ¥6999，免运费，库存60件\n2. 苏宁 ¥7049，需加¥15运费，库存30件\n\n淘宝、拼多多暂未上架白色256GB版本，若你接受其他颜色的同内存版本，还有更优惠的选择：\n- 拼多多（蓝色 256GB）¥67",
+        "checks": {
+          "price_in_answer": true,
+          "no_hallucination": true
+        }
+      }
+    },
+    {
+      "case_id": "AL-E2E-03",
+      "passed": true,
+      "details": {
+        "query": "米14 绿色 哪个平台有货",
+        "answer_preview": "小米14绿色版本仅在**拼多多**平台有货，具体信息如下：\n- 拼多多：小米14 绿色 256GB，售价¥3899，库存200件，免运费。\n\n京东、淘宝、苏宁平台目前暂无绿色版本的小米14在售，仅提供黑色、白色、紫色、金色版本可选。",
+        "checks": {
+          "price_in_answer": true,
+          "no_hallucination": true
+        }
+      }
+    },
+    {
+      "case_id": "AT-E2E-01",
+      "passed": true,
+      "details": {
+        "query": "iPhone 15 黑色 256GB 各平台价格",
+        "answer_preview": "### iPhone 15 黑色 256GB 各平台价格如下：\n🏆 符合要求的最低价：淘宝 ¥6850（需加¥10运费，实付¥6860），库存40件\n其次：京东 ¥6999（免运费），库存50件\n\n⚠️ 拼多多、苏宁当前未收录「黑色+256GB」规格的iPhone 15，若可接受其他颜色可选：\n- ",
+        "checks": {
+          "price_in_answer": true,
+          "no_hallucination": true
+        }
+      }
+    },
+    {
+      "case_id": "AT-E2E-02",
+      "passed": true,
+      "details": {
+        "query": "小米14 白色 128GB 最便宜的平台",
+        "answer_preview": "小米14 白色 128GB 最便宜的平台是**苏宁**：\n> 苏宁 ¥3949 + 运费¥10 = 合计到手¥3959，库存60件，完全匹配您的配置要求。\n\n如果您可以接受同款不同色的128GB版本，还有更划算的选择：\n> 淘宝（黑色128GB）¥3799 + 运费¥5 = 合计到手¥3804，比白",
+        "checks": {
+          "price_in_answer": true,
+          "no_hallucination": true
+        }
+      }
+    },
+    {
+      "case_id": "PE-01",
+      "passed": true,
+      "details": {
+        "query": "对比 iPhone 15 和小米14 的价格",
+        "answer_preview": "### 价格对比核心结论\n同128GB基础配置对比，小米14最低到手价比iPhone 15低1946元：\n- iPhone 15 最低入手渠道：拼多多 ¥5750（黑色128GB，免运费，库存200件）\n- 小米14 最低入手渠道：淘宝 ¥3804（黑色128GB，含5元运费，库存80件）\n\n---",
+        "checks": {
+          "price_in_answer": true,
+          "mentions_both": true,
+          "mentioned_keywords": [
+            "iphone",
+            "小米"
+          ],
+          "no_hallucination": true
+        }
+      }
+    },
+    {
+      "case_id": "PE-02",
+      "passed": true,
+      "details": {
+        "query": "比较 iPhone 15 和 AirPods Pro 2 哪个更值得买",
+        "answer_preview": "两款属于不同品类的数码产品，没有绝对的「更值得」，可结合你的需求和预算选择：\n---\n### 两款最低入手价格（来自最低价平台）\n1. iPhone 15（128GB 黑色）：拼多多 ¥5750\n2. AirPods Pro 2（标准版 白色）：拼多多 ¥1699\n---\n### 选购建议\n✅ **",
+        "checks": {
+          "price_in_answer": true,
+          "mentions_both": true,
+          "mentioned_keywords": [
+            "iphone",
+            "苹果",
+            "airpods"
+          ],
+          "no_hallucination": true
+        }
+      }
+    },
+    {
+      "case_id": "PE-03",
+      "passed": true,
+      "details": {
+        "query": "分析小米14 和 小米平板6 的价格差异",
+        "answer_preview": "### 价格差异分析\n小米14作为旗舰手机，整体定价远高于小米平板6（平板电脑），同128GB基础配置的最低入手价相差¥1705，全平台均价相差¥1785。\n---\n#### 各产品价格详情：\n1. **小米14**\n✅ 最低入手价：淘宝 ¥3804（128GB黑色，含¥5运费）\n📊 全平台价格区间",
+        "checks": {
+          "price_in_answer": true,
+          "mentions_both": true,
+          "mentioned_keywords": [
+            "小米",
+            "平板"
+          ],
+          "no_hallucination": true
+        }
+      }
+    }
+  ]
+}

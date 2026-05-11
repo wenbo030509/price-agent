@@ -47,6 +47,7 @@ class ReActAgent:
         ])
         self.max_reflection_retries = cfg.get("max_reflection_retries", 2)
         self.auto_relax_attributes = cfg.get("auto_relax_attributes", True)
+        self.max_step_react_rounds = cfg.get("max_step_react_rounds", 2)
 
     # ── 入口 ──────────────────────────────────────────────────────────
 
@@ -192,9 +193,9 @@ class ReActAgent:
         steps: List[Dict],
         verbose: bool
     ) -> Dict[int, Dict]:
-        """Phase 2: 按依赖关系分组并行执行，支持 $step{N} 引用解析和自反思重试"""
+        """Phase 2: 每个 Step 独立 mini-ReAct，按依赖关系分组并行/串行"""
         if verbose:
-            print(f"\n[Phase 2] 执行计划...")
+            print(f"\n[Phase 2] 执行计划（每 Step 独立 mini-ReAct）...")
 
         independent = []
         dependent = []
@@ -208,10 +209,10 @@ class ReActAgent:
         results = {}
         errors = {}
 
-        # 无依赖组 → 并行执行
+        # 无依赖组 → 并行执行（每个 Step 内部做 mini-ReAct）
         if independent:
             if verbose:
-                print(f"  并行执行 {len(independent)} 个步骤...")
+                print(f"  并行执行 {len(independent)} 个 Step...")
 
             with concurrent.futures.ThreadPoolExecutor(
                 max_workers=min(len(independent), 4)
@@ -219,28 +220,27 @@ class ReActAgent:
                 futures = {}
                 for step in independent:
                     f = executor.submit(
-                        self._call_tool_safe,
-                        step["tool"],
-                        step.get("args", {}),
+                        self._execute_step_with_react,
+                        step,
+                        None,   # 无依赖结果
+                        verbose,
                     )
                     futures[f] = step
 
                 for f in concurrent.futures.as_completed(futures):
                     step = futures[f]
                     try:
-                        raw_result = f.result(timeout=30)
-                        results[step["step"]] = self._check_and_retry(
-                            step, raw_result, verbose
-                        )
+                        results[step["step"]] = f.result(timeout=60)
                         if verbose:
-                            print(f"  ✓ Step {step['step']}: {step['tool']} 完成")
+                            status = "✓" if "error" not in results[step["step"]] else "✗"
+                            print(f"  {status} Step {step['step']}: {step['tool']} 完成")
                     except Exception as e:
                         errors[step["step"]] = str(e)
                         results[step["step"]] = {"error": str(e)}
                         if verbose:
-                            print(f"  ✗ Step {step['step']}: {step['tool']} 失败 — {e}")
+                            print(f"  ✗ Step {step['step']}: {step['tool']} 异常 — {e}")
 
-        # 有依赖组 → 串行执行（解析 $step{N} 引用）
+        # 有依赖组 → 串行执行（解析 $step{N} 引用后，每个 Step 内部做 mini-ReAct）
         for step in dependent:
             dep = step["depends_on"]
             args = self._resolve_step_refs(step.get("args", {}), results)
@@ -249,22 +249,154 @@ class ReActAgent:
                 print(f"  Step {step['step']}: {step['tool']} (依赖 Step {dep})")
 
             try:
-                raw_result = self._call_tool_safe(step["tool"], args)
-                results[step["step"]] = self._check_and_retry(
-                    step, raw_result, verbose
+                results[step["step"]] = self._execute_step_with_react(
+                    step, args, verbose
                 )
                 if verbose:
-                    print(f"  ✓ Step {step['step']}: {step['tool']} 完成")
+                    status = "✓" if "error" not in results[step["step"]] else "✗"
+                    print(f"  {status} Step {step['step']}: {step['tool']} 完成")
             except Exception as e:
                 errors[step["step"]] = str(e)
                 results[step["step"]] = {"error": str(e)}
                 if verbose:
-                    print(f"  ✗ Step {step['step']}: {step['tool']} 失败 — {e}")
+                    print(f"  ✗ Step {step['step']}: {step['tool']} 异常 — {e}")
 
         if errors and verbose:
-            print(f"  共 {len(errors)} 个步骤失败")
+            print(f"  共 {len(errors)} 个 Step 失败")
 
         return results
+
+    # ── Step 级 mini-ReAct ──────────────────────────────────────────────
+
+    def _execute_step_with_react(
+        self,
+        step: Dict,
+        resolved_args: Optional[Dict],
+        verbose: bool,
+    ) -> Dict:
+        """
+        以 mini-ReAct 循环执行单个 Plan Step。
+
+        流程：
+        1. 执行 Plan 指定的工具/参数
+        2. 如果结果为空/异常 → LLM 反思决定：重试（换参数）| 换工具 | 放弃
+        3. 最多执行 max_step_react_rounds 轮
+        """
+        tool_name = step["tool"]
+        purpose = step.get("purpose", "")
+        args = resolved_args or step.get("args", {})
+
+        if verbose:
+            print(f"\n  ── Step {step['step']}: {purpose} ──")
+
+        # Round 1: 按 Plan 执行
+        result = self._call_tool_safe(tool_name, args)
+        round_num = 1
+        result_str = self._format_step_result(result)
+
+        if verbose:
+            found_info = ""
+            if "raw_data" in result:
+                rd = result["raw_data"]
+                if rd.get("found"):
+                    found_info = f" (找到 {rd.get('total_matches', '?')} 个匹配)"
+                else:
+                    found_info = " (未找到)"
+            print(f"    Round 1: {tool_name}{found_info}")
+
+        # 如果第一轮就拿到数据，直接返回
+        if not self._is_empty_result(result) and "error" not in result:
+            if verbose:
+                print(f"    ✓ 数据有效，完成")
+            return result
+
+        # Round 2+: 空结果或异常 → LLM 反思决定
+        tools_desc = self._build_tools_description()
+
+        for round_num in range(2, self.max_step_react_rounds + 2):
+            reflection_prompt = f"""你正在执行一个搜索计划的第 {step['step']} 步。
+
+**步骤目的**：{purpose}
+**上轮调用**：{tool_name}({json.dumps(args, ensure_ascii=False)})
+**上轮结果**：{result_str[:800]}
+
+**可用工具**：
+{tools_desc}
+
+请决定下一步，只输出 JSON：
+{{
+  "action": "retry | switch_tool | done",
+  "reasoning": "为什么做这个决定的简要说明",
+  "tool": "工具名（retry 或 switch_tool 时必填）",
+  "args": {{"参数": "值"}}（retry 或 switch_tool 时必填）
+}}
+
+决策规则：
+- retry：上轮结果为空，换个参数重试（如去掉颜色/内存、缩短关键词、尝试别名）
+- switch_tool：当前工具不合适，换一个工具（如从单平台切换为全平台查询）
+- done：已经重试过了仍无结果，或有足够数据，停止尝试
+
+只输出 JSON，不要其他文字。"""
+
+            try:
+                resp = self.client.chat.completions.create(
+                    model=self.model_react,
+                    messages=[{"role": "user", "content": reflection_prompt}],
+                    temperature=0,
+                    max_tokens=300,
+                )
+                raw = resp.choices[0].message.content.strip()
+                raw = raw.strip("`").lstrip("json").strip()
+                decision = json.loads(raw)
+            except Exception:
+                decision = {"action": "done", "reasoning": "LLM 调用失败"}
+
+            action = decision.get("action", "done")
+
+            if verbose:
+                print(f"    Round {round_num}: {decision.get('reasoning', action)}")
+
+            if action in ("retry", "switch_tool"):
+                new_tool = decision.get("tool", tool_name)
+                new_args = decision.get("args", args)
+                try:
+                    result = self._call_tool_safe(new_tool, new_args)
+                    result_str = self._format_step_result(result)
+
+                    if not self._is_empty_result(result) and "error" not in result:
+                        if verbose:
+                            found_info = ""
+                            if "raw_data" in result:
+                                rd = result["raw_data"]
+                                if rd.get("found"):
+                                    found_info = f" (找到 {rd.get('total_matches', '?')} 个匹配)"
+                            print(f"    ✓ 重试成功{found_info}")
+                        return result
+                except Exception as e:
+                    if verbose:
+                        print(f"    ✗ 重试失败: {e}")
+
+            elif action == "done":
+                break
+
+        # 所有重试结束还是没有数据
+        if verbose:
+            print(f"    ⚠ 未找到数据，返回空结果标记")
+        return result  # 返回最后一次的结果（即使是空的）
+
+    def _format_step_result(self, result: Dict) -> str:
+        """格式化 tool 结果用于 step-reflection prompt"""
+        if "formatted_text" in result:
+            return result["formatted_text"][:800]
+        if "raw_data" in result:
+            rd = result["raw_data"]
+            if rd.get("found"):
+                cheapest = rd.get("cheapest", {})
+                return f"找到 {rd.get('total_matches', '?')} 个匹配，最便宜: {cheapest.get('platform_name', '?')} ¥{cheapest.get('platform_price', '?')}"
+            return f"未找到匹配"
+        if "error" in result:
+            return f"执行错误: {result['error']}"
+        return json.dumps(result, ensure_ascii=False, indent=2)[:500]
 
     # ── $step{N} 引用解析 ─────────────────────────────────────────────
 
@@ -296,64 +428,6 @@ class ReActAgent:
             if result is None:
                 return ref
         return result
-
-    # ── 自反思重试 ────────────────────────────────────────────────────
-
-    def _check_and_retry(
-        self,
-        step: Dict,
-        result: Dict,
-        verbose: bool,
-    ) -> Dict:
-        """
-        检查工具返回结果，如果为空/未找到且条件允许，自动放宽属性重试。
-        """
-        if not self.auto_relax_attributes:
-            return result
-
-        # 判断是否为空结果
-        is_empty = False
-        if "raw_data" in result:
-            rd = result["raw_data"]
-            is_empty = (not rd.get("found")) or (rd.get("total_matches", 0) == 0)
-        elif "error" in result:
-            return result  # 执行错误，不重试
-
-        if not is_empty:
-            return result
-
-        args = step.get("args", {})
-        color = args.get("color")
-        memory = args.get("memory")
-        product_name = args.get("product_name", "")
-
-        if not (color or memory):
-            return result  # 没有可放宽的属性
-
-        if verbose:
-            removed = []
-            if color:
-                removed.append(f"color={color}")
-            if memory:
-                removed.append(f"memory={memory}")
-            print(f"  🔄 Step {step['step']}: 空结果，放宽属性 ({', '.join(removed)}) 重试...")
-
-        relaxed_args = {k: v for k, v in args.items() if k not in ("color", "memory")}
-        relaxed_args["color"] = None
-        relaxed_args["memory"] = None
-
-        retry_result = self._call_tool_safe(step["tool"], relaxed_args)
-
-        if "raw_data" in retry_result:
-            retry_result.setdefault("raw_data", {})
-            retry_result["raw_data"]["_auto_relaxed"] = True
-        if verbose:
-            found = False
-            if "raw_data" in retry_result:
-                found = retry_result["raw_data"].get("found", False)
-            print(f"  {'✓' if found else '✗'} Step {step['step']}: 放宽重试 {'找到结果' if found else '仍为空'}")
-
-        return retry_result
 
     # ── Phase 3: Synthesize ───────────────────────────────────────────
 
