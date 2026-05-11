@@ -1,8 +1,10 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, send_from_directory
 from flask_cors import CORS
 import uuid
 import sys
 import io
+import os
+import base64
 
 from config import Settings
 from database import (
@@ -175,13 +177,20 @@ def chat():
     data = request.json
     user_message = data['message']
     session_id = data.get('session_id')
-    
+    image_url = data.get('image_url', '')
+
     # 如果没有session_id，创建新会话
     if not session_id:
         session_id = str(uuid.uuid4())
         create_session(db, session_id)
-    
-    # 保存用户消息
+
+    # 如果附带图片，将图片URL追加到用户消息中（供 Agent 使用）
+    agent_message = user_message
+    if image_url:
+        full_url = request.host_url.rstrip("/") + image_url
+        agent_message = f"{user_message}\n[用户上传了商品图片: {full_url}]"
+
+    # 保存用户消息（保存原始消息，方便前端展示）
     add_message(db, session_id, 'user', user_message)
 
     # 从数据库读取历史消息作为上下文（排除刚写入的当前消息）
@@ -197,8 +206,8 @@ def chat():
     sys.stdout = buffer = io.StringIO()
 
     try:
-        # 运行Agent（传入历史上下文）
-        answer = agent.run(user_message, history=history_for_agent, verbose=True)
+        # 运行Agent（传入历史上下文，如果有图片则消息包含图片URL）
+        answer = agent.run(agent_message, history=history_for_agent, verbose=True)
 
         # 获取并解析推理过程
         reasoning_output = buffer.getvalue()
@@ -429,6 +438,58 @@ def image_search():
             "success": False,
             "error": str(e)
         }), 500
+
+
+# ── 图片上传 ────────────────────────────────────────────────────────────────
+
+UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "static", "uploads")
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+
+@app.route("/api/upload-image", methods=["POST"])
+def upload_image():
+    """接收图片上传，返回访问 URL"""
+    if "image" not in request.files:
+        # 也支持 base64 JSON 方式
+        data = request.get_json(silent=True)
+        if data and data.get("image_base64"):
+            try:
+                img_data = base64.b64decode(data["image_base64"].split(",")[-1])
+                ext = "png"
+                filename = f"{uuid.uuid4().hex}.{ext}"
+                filepath = os.path.join(UPLOAD_DIR, filename)
+                with open(filepath, "wb") as f:
+                    f.write(img_data)
+                return jsonify({
+                    "success": True,
+                    "image_url": f"/static/uploads/{filename}",
+                })
+            except Exception as e:
+                return jsonify({"success": False, "error": str(e)}), 400
+        return jsonify({"success": False, "error": "请上传图片文件"}), 400
+
+    file = request.files["image"]
+    if file.filename == "":
+        return jsonify({"success": False, "error": "文件名为空"}), 400
+
+    # 限制文件大小 10MB
+    file.seek(0, 2)
+    size = file.tell()
+    file.seek(0)
+    if size > 10 * 1024 * 1024:
+        return jsonify({"success": False, "error": "图片大小不能超过 10MB"}), 400
+
+    ext = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else "png"
+    if ext not in ("jpg", "jpeg", "png", "gif", "webp", "bmp"):
+        ext = "png"
+    filename = f"{uuid.uuid4().hex}.{ext}"
+    filepath = os.path.join(UPLOAD_DIR, filename)
+    file.save(filepath)
+
+    return jsonify({
+        "success": True,
+        "image_url": f"/static/uploads/{filename}",
+    })
 
 
 @app.teardown_appcontext

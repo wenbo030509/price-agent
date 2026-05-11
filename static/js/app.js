@@ -3,6 +3,8 @@ let currentPlatform = 'jd';
 let isLoading = false;
 let sidebarCollapsed = false;
 let currentProducts = []; // 保存当前加载的商品列表
+let currentImageUrl = null;  // 当前上传的图片URL
+let currentImageFile = null; // 当前图片文件（用于粘贴上传）
 
 // 平台名称映射
 const platformNames = {
@@ -174,13 +176,137 @@ function renderMessages(messages) {
 }
 
 // 添加消息到聊天区域
-function addMessageToChat(role, content) {
+function addMessageToChat(role, content, imageUrl) {
     const container = document.getElementById('chatMessages');
     const messageDiv = document.createElement('div');
     messageDiv.className = `message ${role}`;
-    messageDiv.innerHTML = `<div class="message-content">${escapeHtml(content)}</div>`;
+    let html = '';
+    if (imageUrl) {
+        html += `<img src="${escapeHtml(imageUrl)}" class="message-image" onclick="zoomMessageImage('${escapeHtml(imageUrl)}')" title="点击放大">`;
+    }
+    html += `<div class="message-content">${escapeHtml(content)}</div>`;
+    messageDiv.innerHTML = html;
     container.appendChild(messageDiv);
     scrollToBottom();
+}
+
+// 点击消息中的图片放大
+function zoomMessageImage(url) {
+    document.getElementById('imageZoomImg').src = url;
+    const modal = new bootstrap.Modal(document.getElementById('imageZoomModal'));
+    modal.show();
+}
+
+// ── 图片上传 / 粘贴 / 预览 / 删除 ──────────────────────────────────────────
+
+// 处理文件选择
+function handleImageFile(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    uploadImageFile(file);
+    event.target.value = '';  // 重置以便重新选择同一文件
+}
+
+// 上传图片文件到服务器
+async function uploadImageFile(file) {
+    if (currentImageUrl) {
+        removeImage();  // 只允许一张图片，先移除旧的
+    }
+
+    const formData = new FormData();
+    formData.append('image', file);
+
+    try {
+        const resp = await fetch('/api/upload-image', { method: 'POST', body: formData });
+        const data = await resp.json();
+        if (data.success) {
+            showImagePreview(data.image_url);
+        } else {
+            alert('图片上传失败: ' + (data.error || '未知错误'));
+        }
+    } catch (e) {
+        console.error('上传图片失败:', e);
+        alert('图片上传失败，请重试');
+    }
+}
+
+// 显示图片缩略图
+function showImagePreview(imageUrl) {
+    currentImageUrl = imageUrl;
+    const area = document.getElementById('imagePreviewArea');
+    const thumb = document.getElementById('imagePreviewThumb');
+    thumb.src = imageUrl;
+    area.style.display = 'block';
+}
+
+// 删除已上传图片
+function removeImage() {
+    currentImageUrl = null;
+    currentImageFile = null;
+    document.getElementById('imagePreviewArea').style.display = 'none';
+    document.getElementById('imagePreviewThumb').src = '';
+}
+
+// 点击缩略图放大
+function zoomImage() {
+    if (!currentImageUrl) return;
+    document.getElementById('imageZoomImg').src = currentImageUrl;
+    const modal = new bootstrap.Modal(document.getElementById('imageZoomModal'));
+    modal.show();
+}
+
+// Ctrl+V 粘贴图片
+document.addEventListener('paste', function(e) {
+    // 如果焦点在 input 上且粘贴的是文本，不拦截
+    const activeEl = document.activeElement;
+    if (activeEl && activeEl.tagName === 'INPUT' && activeEl.type === 'text') {
+        // 检查剪贴板是否有图片
+        const items = e.clipboardData.items;
+        for (let i = 0; i < items.length; i++) {
+            if (items[i].type.startsWith('image/')) {
+                e.preventDefault();
+                const file = items[i].getAsFile();
+                uploadImageFile(file);
+                return;
+            }
+        }
+        return;  // 纯文本粘贴，正常处理
+    }
+
+    // 焦点不在输入框，检查是否有图片
+    const items = e.clipboardData.items;
+    for (let i = 0; i < items.length; i++) {
+        if (items[i].type.startsWith('image/')) {
+            e.preventDefault();
+            const file = items[i].getAsFile();
+            uploadImageFile(file);
+            return;
+        }
+    }
+});
+
+// 拖拽上传
+const chatInputEl = document.querySelector('.chat-input');
+if (chatInputEl) {
+    chatInputEl.addEventListener('dragover', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        this.classList.add('drag-over');
+    });
+    chatInputEl.addEventListener('dragleave', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        this.classList.remove('drag-over');
+    });
+    chatInputEl.addEventListener('drop', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        this.classList.remove('drag-over');
+        const files = e.dataTransfer.files;
+        if (files.length > 0 && files[0].type.startsWith('image/')) {
+            uploadImageFile(files[0]);
+        }
+    });
 }
 
 // 发送消息
@@ -193,7 +319,19 @@ async function sendMessage() {
     if (!message) return;
 
     input.value = '';
-    addMessageToChat('user', message);
+
+    // 展示用户消息（含图片）
+    if (currentImageUrl) {
+        addMessageToChat('user', message, currentImageUrl);
+    } else {
+        addMessageToChat('user', message);
+    }
+
+    const imageUrlToSend = currentImageUrl;
+    currentImageUrl = null;
+    document.getElementById('imagePreviewArea').style.display = 'none';
+    document.getElementById('imagePreviewThumb').src = '';
+
     isLoading = true;
 
     // 自动切换到推理过程tab
@@ -249,7 +387,8 @@ async function sendMessage() {
             },
             body: JSON.stringify({
                 message: message,
-                session_id: currentSessionId
+                session_id: currentSessionId,
+                image_url: imageUrlToSend || ''
             })
         });
 
