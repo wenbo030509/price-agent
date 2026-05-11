@@ -350,3 +350,81 @@ body {
     white-space: pre-wrap;
     word-break: break-word;
 }
+
+/* ── 图片上传预览 ──────────────────────────────────────────────── */
+
+.image-preview-area {
+    padding: 8px 12px;
+    background: #f8f9fa;
+    border-radius: 8px 8px 0 0;
+    border: 1px solid #dee2e6;
+    border-bottom: none;
+}
+
+.image-preview-wrapper {
+    position: relative;
+    display: inline-block;
+}
+
+.image-preview-thumb {
+    max-width: 120px;
+    max-height: 80px;
+    border-radius: 6px;
+    cursor: pointer;
+    border: 2px solid #e9ecef;
+    transition: border-color 0.2s;
+    object-fit: cover;
+}
+
+.image-preview-thumb:hover {
+    border-color: #0d6efd;
+}
+
+.image-preview-delete {
+    position: absolute;
+    top: -8px;
+    right: -8px;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: #dc3545;
+    color: white;
+    border: 2px solid white;
+    font-size: 12px;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    transition: transform 0.15s;
+}
+
+.image-preview-delete:hover {
+    transform: scale(1.15);
+}
+
+/* ── 聊天消息中的图片 ──────────────────────────────────────────── */
+
+.message-image {
+    max-width: 200px;
+    max-height: 150px;
+    border-radius: 8px;
+    cursor: pointer;
+    margin-bottom: 6px;
+    display: block;
+    border: 1px solid #dee2e6;
+    transition: opacity 0.2s;
+}
+
+.message-image:hover {
+    opacity: 0.85;
+}
+
+/* ── 拖拽上传 ──────────────────────────────────────────────────── */
+
+.chat-input.drag-over {
+    outline: 2px dashed #0d6efd;
+    outline-offset: -2px;
+    background: rgba(13, 110, 253, 0.05);
+}
