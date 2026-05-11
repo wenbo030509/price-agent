@@ -376,16 +376,16 @@ python3 tests/eval_p3_boundary.py   # P3 能力边界测试
 python3 tests/eval_p4_benchmark.py  # P4 汇总所有阶段
 ```
 
-**最新实测结果（2026-05-11）：综合通过率 98.2% (56/57)**
+**最新实测结果（2026-05-11）：综合通过率 98.3% (59/60)**
 
-> 含 Plan-Execute 策略升级后的增量评估。复杂 query 自动走 Plan-Execute（2 次 LLM），简单 query 走传统 ReAct。
+> 含 Plan-Execute + 多轮对话滑动窗口。复杂 query 自动 Plan-Execute（2 次 LLM），简单 query 走 ReAct。
 
 | 阶段 | 通过率 | 说明 |
 |------|--------|------|
 | P0 单元测试 | 100% (18/18) | 数据库 CRUD、打分、并行查询、回归 |
 | P1 参数提取 | 100% (17/17) | 属性提取 + 品牌别名改写 |
-| P2 端到端 | 94.1% (16/17) | 含 3 个 Plan-Execute 专项 case |
-| P3 能力边界 | 80% (12/15) | 8/8 评分通过，3 个 known_missing |
+| P2 端到端 | 94.1% (16/17) | ReAct + Plan-Execute 混合 |
+| P3 能力边界 | 100% (15/15) | 含多轮对话 3 个 case，known_missing=0 |
 
 ## 许可证
 
