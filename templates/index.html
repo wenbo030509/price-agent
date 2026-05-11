@@ -3,41 +3,75 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>商品对比智能助手</title>
+    <title>Price Agent — 智能比价助手</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet">
 </head>
 <body>
     <div class="container-fluid">
         <div class="row">
-            <!-- 左侧边栏 - 会话历史 -->
+            <!-- ============================================================
+                 6. 左侧边栏 — 会话历史（重构版）
+                 ============================================================ -->
             <div class="col-md-3 sidebar" id="sidebar">
-                <div class="d-flex justify-content-between align-items-center mb-3">
-                    <div class="sidebar-header-content">
-                        <h5 class="mb-0">会话历史</h5>
-                    </div>
-                    <div class="d-flex align-items-center gap-2">
-                        <button class="btn btn-primary btn-sm sidebar-header-content" onclick="createNewSession()">
-                            + 新建会话
-                        </button>
-                        <button class="btn btn-link p-0 text-white sidebar-toggle-btn" onclick="toggleSidebar()">
-                            <span id="sidebarToggleIcon">◀</span>
-                        </button>
-                    </div>
+                <div class="sidebar-header">
+                    <div class="sidebar-header-title">会话历史</div>
+                    <button class="sidebar-toggle-btn" onclick="toggleSidebar()">
+                        <span id="sidebarToggleIcon">◀</span>
+                    </button>
                 </div>
-                <div id="sessionList" class="session-list">
+
+                <!-- 搜索框 -->
+                <div class="sidebar-search">
+                    <span class="search-icon">🔍</span>
+                    <input type="text" id="sessionSearch" placeholder="搜索会话..."
+                           oninput="filterSessions()">
                 </div>
+
+                <!-- 会话列表 -->
+                <div class="session-list" id="sessionList"></div>
+
+                <!-- 悬浮新建按钮 -->
+                <button class="sidebar-new-btn" onclick="createNewSession()">
+                    <span class="btn-icon">+</span> <span>新建会话</span>
+                </button>
             </div>
 
-            <!-- 中间 - 聊天区域 -->
+            <!-- ============================================================
+                 聊天区域
+                 ============================================================ -->
             <div class="col-md-6 chat-area" id="chatArea">
                 <div class="chat-header">
-                    <h3 class="mb-0">🤖 ReAct 商品对比智能助手</h3>
+                    <div class="chat-header-title">Price Agent</div>
                 </div>
+
+                <!-- 7. 欢迎空状态 -->
                 <div id="chatMessages" class="chat-messages">
+                    <div class="welcome-state" id="welcomeState">
+                        <div class="welcome-logo">⚡</div>
+                        <div class="welcome-title">Price Agent</div>
+                        <div class="welcome-subtitle">
+                            智能识物比价助手 — 拍照搜同款、跨平台比价、帮你找到最具性价比的选择
+                        </div>
+                        <div class="welcome-actions">
+                            <div class="welcome-chip" onclick="quickAsk('iPhone 15 在哪个平台最便宜')">
+                                📱 比较最新 iPhone 价格
+                            </div>
+                            <div class="welcome-chip" onclick="quickAsk('小米14 黑色 256GB 各平台价格')">
+                                🔍 查找小米14 最优惠价
+                            </div>
+                            <div class="welcome-chip" onclick="quickAsk('我想买平板，帮我看看各平台有什么')">
+                                📋 浏览各平台平板电脑
+                            </div>
+                            <div class="welcome-chip" onclick="quickAsk('AirPods Pro 2 在哪买最划算')">
+                                🎧 查找 AirPods 最低价
+                            </div>
+                        </div>
+                    </div>
                 </div>
+
+                <!-- 输入区域 -->
                 <div class="chat-input">
-                    <!-- 图片预览区 -->
                     <div id="imagePreviewArea" class="image-preview-area" style="display:none;">
                         <div class="image-preview-wrapper">
                             <img id="imagePreviewThumb" src="" alt="预览" class="image-preview-thumb"
@@ -46,150 +80,103 @@
                         </div>
                     </div>
                     <div class="input-group">
-                        <!-- 上传按钮 -->
-                        <button class="btn btn-outline-secondary" id="uploadBtn" onclick="document.getElementById('imageFileInput').click()" title="上传图片（也可 Ctrl+V 粘贴）">
-                            📷
-                        </button>
-                        <input type="file" id="imageFileInput" accept="image/*" style="display:none" onchange="handleImageFile(event)">
+                        <button class="btn-upload" onclick="document.getElementById('imageFileInput').click()"
+                                title="上传图片（也可 Ctrl+V 粘贴）">📷</button>
+                        <input type="file" id="imageFileInput" accept="image/*" style="display:none"
+                               onchange="handleImageFile(event)">
                         <input type="text" id="userInput" class="form-control"
-                               placeholder="输入你的问题，或上传图片搜同款..." onkeypress="handleKeyPress(event)">
-                        <button class="btn btn-primary" onclick="sendMessage()">发送</button>
+                               placeholder="输入商品名称，或上传图片搜同款..."
+                               onkeypress="handleKeyPress(event)">
+                        <button class="btn-send" onclick="sendMessage()">↑</button>
                     </div>
                 </div>
             </div>
 
-            <!-- 右侧 - 商品管理和推理过程 -->
+            <!-- ============================================================
+                 右侧面板
+                 ============================================================ -->
             <div class="col-md-3 right-panel" id="rightPanel">
-                <!-- 标签页导航 -->
-        <ul class="nav nav-tabs mb-3" id="myTab" role="tablist">
-            <li class="nav-item" role="presentation">
-                <button class="nav-link active" id="products-tab" data-bs-toggle="tab"
-                        data-bs-target="#products" type="button" role="tab">商品管理</button>
-            </li>
-            <li class="nav-item" role="presentation">
-                <button class="nav-link" id="compare-tab" data-bs-toggle="tab"
-                        data-bs-target="#compare" type="button" role="tab">多平台比价</button>
-            </li>
-            <li class="nav-item" role="presentation">
-                <button class="nav-link" id="reasoning-tab" data-bs-toggle="tab"
-                        data-bs-target="#reasoning" type="button" role="tab">推理过程</button>
-            </li>
-        </ul>
+                <ul class="nav nav-tabs mb-3" id="myTab" role="tablist">
+                    <li class="nav-item"><button class="nav-link active" id="products-tab" data-bs-toggle="tab"
+                            data-bs-target="#products">商品管理</button></li>
+                    <li class="nav-item"><button class="nav-link" id="compare-tab" data-bs-toggle="tab"
+                            data-bs-target="#compare">多平台比价</button></li>
+                    <li class="nav-item"><button class="nav-link" id="reasoning-tab" data-bs-toggle="tab"
+                            data-bs-target="#reasoning">推理过程</button></li>
+                </ul>
 
-                <!-- 标签页内容 -->
                 <div class="tab-content" id="myTabContent">
                     <!-- 商品管理 -->
-                    <div class="tab-pane fade show active" id="products" role="tabpanel">
-                        <!-- 平台选择标签 -->
-                        <ul class="nav nav-pills nav-fill mb-3" id="platformTabs" role="tablist">
-                            <li class="nav-item" role="presentation">
-                                <button class="nav-link active" id="platform-jd-tab" data-bs-toggle="pill"
-                                        data-bs-target="#platform-jd" type="button" role="tab"
-                                        onclick="switchPlatform('jd')">京东</button>
-                            </li>
-                            <li class="nav-item" role="presentation">
-                                <button class="nav-link" id="platform-taobao-tab" data-bs-toggle="pill"
-                                        data-bs-target="#platform-taobao" type="button" role="tab"
-                                        onclick="switchPlatform('taobao')">淘宝</button>
-                            </li>
-                            <li class="nav-item" role="presentation">
-                                <button class="nav-link" id="platform-pdd-tab" data-bs-toggle="pill"
-                                        data-bs-target="#platform-pdd" type="button" role="tab"
-                                        onclick="switchPlatform('pdd')">拼多多</button>
-                            </li>
-                            <li class="nav-item" role="presentation">
-                                <button class="nav-link" id="platform-suning-tab" data-bs-toggle="pill"
-                                        data-bs-target="#platform-suning" type="button" role="tab"
-                                        onclick="switchPlatform('suning')">苏宁</button>
-                            </li>
+                    <div class="tab-pane fade show active" id="products">
+                        <ul class="nav nav-pills nav-fill mb-3 platform-pills" id="platformTabs">
+                            <li class="nav-item"><button class="nav-link active" id="platform-jd-tab"
+                                    data-bs-toggle="pill" data-bs-target="#platform-jd"
+                                    onclick="switchPlatform('jd')">京东</button></li>
+                            <li class="nav-item"><button class="nav-link" id="platform-taobao-tab"
+                                    data-bs-toggle="pill" data-bs-target="#platform-taobao"
+                                    onclick="switchPlatform('taobao')">淘宝</button></li>
+                            <li class="nav-item"><button class="nav-link" id="platform-pdd-tab"
+                                    data-bs-toggle="pill" data-bs-target="#platform-pdd"
+                                    onclick="switchPlatform('pdd')">拼多多</button></li>
+                            <li class="nav-item"><button class="nav-link" id="platform-suning-tab"
+                                    data-bs-toggle="pill" data-bs-target="#platform-suning"
+                                    onclick="switchPlatform('suning')">苏宁</button></li>
                         </ul>
 
-                        <!-- 添加新商品表单 -->
                         <div class="mb-3">
-                            <button class="btn btn-outline-secondary btn-sm w-100 mb-2" type="button" onclick="toggleAddProductCollapse()">
+                            <button class="btn-sm w-100 mb-2" onclick="toggleAddProductCollapse()">
                                 <span id="addProductToggleIcon">▶</span> 添加新商品
                             </button>
-                            <div id="addProductSection" style="display: none;">
+                            <div id="addProductSection" style="display:none;">
                                 <form id="addProductForm">
-                                    <div class="mb-2">
-                                        <input type="text" class="form-control form-control-sm" id="productName"
-                                               placeholder="商品名称" required>
-                                    </div>
-                                    <div class="mb-2">
-                                        <input type="number" class="form-control form-control-sm" id="productPrice"
-                                               placeholder="参考价" required step="0.01">
-                                    </div>
-                                    <div class="mb-2">
-                                        <input type="number" class="form-control form-control-sm" id="productPlatformPrice"
-                                               placeholder="平台价（可选）" step="0.01">
-                                    </div>
-                                    <div class="mb-2">
-                                        <input type="number" class="form-control form-control-sm" id="productStock"
-                                               placeholder="库存" required>
-                                    </div>
-                                    <div class="mb-2">
-                                        <input type="text" class="form-control form-control-sm" id="productCategory"
-                                               placeholder="品类" required>
-                                    </div>
-                                    <div class="mb-2">
-                                        <input type="text" class="form-control form-control-sm" id="productColor"
-                                               placeholder="颜色（可选）">
-                                    </div>
-                                    <div class="mb-2">
-                                        <input type="text" class="form-control form-control-sm" id="productMemory"
-                                               placeholder="内存/容量（可选）">
-                                    </div>
-                                    <div class="mb-2">
-                                        <input type="number" class="form-control form-control-sm" id="productShippingFee"
-                                               placeholder="运费（默认0）" step="0.01" value="0">
-                                    </div>
-                                    <div class="form-check mb-2">
-                                        <input type="checkbox" class="form-check-input" id="productInStock" checked>
-                                        <label class="form-check-label" for="productInStock">有货</label>
-                                    </div>
-                                    <button type="submit" class="btn btn-success btn-sm w-100">添加商品</button>
+                                    <div class="mb-2"><input type="text" class="form-control form-control-sm"
+                                            id="productName" placeholder="商品名称" required></div>
+                                    <div class="mb-2"><input type="number" class="form-control form-control-sm"
+                                            id="productPrice" placeholder="参考价" required step="0.01"></div>
+                                    <div class="mb-2"><input type="number" class="form-control form-control-sm"
+                                            id="productPlatformPrice" placeholder="平台价（可选）" step="0.01"></div>
+                                    <div class="mb-2"><input type="number" class="form-control form-control-sm"
+                                            id="productStock" placeholder="库存" required></div>
+                                    <div class="mb-2"><input type="text" class="form-control form-control-sm"
+                                            id="productCategory" placeholder="品类" required></div>
+                                    <div class="mb-2"><input type="text" class="form-control form-control-sm"
+                                            id="productColor" placeholder="颜色（可选）"></div>
+                                    <div class="mb-2"><input type="text" class="form-control form-control-sm"
+                                            id="productMemory" placeholder="内存/容量（可选）"></div>
+                                    <div class="mb-2"><input type="number" class="form-control form-control-sm"
+                                            id="productShippingFee" placeholder="运费" step="0.01" value="0"></div>
+                                    <div class="form-check mb-2"><input type="checkbox" class="form-check-input"
+                                            id="productInStock" checked><label class="form-check-label">有货</label></div>
+                                    <button type="submit" class="btn-sm w-100" style="background:var(--brand);color:#FFF;border:none;">添加</button>
                                 </form>
                             </div>
                         </div>
-
                         <hr>
-
-                        <!-- 商品列表 -->
                         <h6 id="productListTitle">京东 - 商品列表</h6>
-                        <div class="mb-3">
-                            <input type="text" class="form-control form-control-sm" id="productSearch"
-                                   placeholder="搜索商品（名称、品类、颜色、内存）..."
-                                   oninput="searchProducts()">
-                        </div>
-                        <div id="productList" class="product-list">
-                        </div>
+                        <div class="mb-2"><input type="text" class="form-control form-control-sm" id="productSearch"
+                                placeholder="搜索商品..." oninput="searchProducts()"></div>
+                        <div id="productList" class="product-list"></div>
                     </div>
 
                     <!-- 多平台比价 -->
-                    <div class="tab-pane fade" id="compare" role="tabpanel">
-                        <div class="mb-3">
-                            <h6>多平台比价</h6>
-                            <div class="mb-2">
-                                <input type="text" class="form-control form-control-sm" id="compareProductName"
-                                       placeholder="输入商品名称，如：iPhone 15">
-                            </div>
-                            <button class="btn btn-info btn-sm w-100 mb-3" onclick="comparePrice()">
-                                🔍 开始比价
-                            </button>
-                            <div id="compareResult" class="compare-result">
-                                <p class="text-muted small">输入商品名称后点击比价...</p>
-                            </div>
+                    <div class="tab-pane fade" id="compare">
+                        <h6>多平台比价</h6>
+                        <div class="mb-2"><input type="text" class="form-control form-control-sm" id="compareProductName"
+                                placeholder="输入商品名称，如：iPhone 15"></div>
+                        <button class="btn-sm w-100 mb-3" onclick="comparePrice()"
+                                style="background:var(--brand);color:#FFF;border:none;">🔍 开始比价</button>
+                        <div id="compareResult" class="compare-result">
+                            <p class="text-muted small">输入商品名称后点击比价...</p>
                         </div>
                         <hr>
-                        <h6>快速查询商品</h6>
-                        <div id="quickProducts" class="quick-products">
-                        </div>
+                        <h6>快速查询</h6>
+                        <div id="quickProducts" class="quick-products"></div>
                     </div>
 
-                    <!-- 推理过程 -->
-                    <div class="tab-pane fade" id="reasoning" role="tabpanel">
-                        <div id="reasoningContent" class="reasoning-content">
-                            <p class="text-muted">发送问题后，ReAct推理过程将显示在这里...</p>
+                    <!-- 5. 推理过程 — 垂直时间线 -->
+                    <div class="tab-pane fade" id="reasoning">
+                        <div id="reasoningContent">
+                            <p class="text-muted">发送问题后，推理过程将显示在这里...</p>
                         </div>
                     </div>
                 </div>
@@ -212,63 +199,35 @@
     </div>
 
     <!-- 编辑商品模态框 -->
-    <div class="modal fade" id="editProductModal" tabindex="-1" aria-labelledby="editProductModalLabel" aria-hidden="true">
+    <div class="modal fade" id="editProductModal" tabindex="-1">
         <div class="modal-dialog">
             <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title" id="editProductModalLabel">编辑商品</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
+                <div class="modal-header"><h5 class="modal-title">编辑商品</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
                 <div class="modal-body">
                     <form id="editProductForm">
-                        <input type="hidden" id="editProductId">
-                        <input type="hidden" id="editProductPlatformId">
-                        <div class="mb-3">
-                            <label for="editProductName" class="form-label">商品名称</label>
-                            <input type="text" class="form-control" id="editProductName" required>
-                        </div>
-                        <div class="mb-3">
-                            <label for="editProductPrice" class="form-label">参考价</label>
-                            <input type="number" class="form-control" id="editProductPrice" step="0.01" required>
-                        </div>
-                        <div class="mb-3">
-                            <label for="editProductPlatformPrice" class="form-label">平台价（可选）</label>
-                            <input type="number" class="form-control" id="editProductPlatformPrice" step="0.01">
-                        </div>
-                        <div class="mb-3">
-                            <label for="editProductStock" class="form-label">库存</label>
-                            <input type="number" class="form-control" id="editProductStock" required>
-                        </div>
-                        <div class="mb-3">
-                            <label for="editProductCategory" class="form-label">品类</label>
-                            <input type="text" class="form-control" id="editProductCategory" required>
-                        </div>
-                        <div class="mb-3">
-                            <label for="editProductColor" class="form-label">颜色（可选）</label>
-                            <input type="text" class="form-control" id="editProductColor">
-                        </div>
-                        <div class="mb-3">
-                            <label for="editProductMemory" class="form-label">内存/容量（可选）</label>
-                            <input type="text" class="form-control" id="editProductMemory">
-                        </div>
-                        <div class="mb-3">
-                            <label for="editProductShippingFee" class="form-label">运费</label>
-                            <input type="number" class="form-control" id="editProductShippingFee" step="0.01" value="0">
-                        </div>
-                        <div class="form-check mb-3">
-                            <input type="checkbox" class="form-check-input" id="editProductInStock">
-                            <label class="form-check-label" for="editProductInStock">有货</label>
-                        </div>
+                        <input type="hidden" id="editProductId"><input type="hidden" id="editProductPlatformId">
+                        <div class="mb-2"><label class="form-label small">商品名称</label><input type="text" class="form-control form-control-sm" id="editProductName" required></div>
+                        <div class="mb-2"><label class="form-label small">参考价</label><input type="number" class="form-control form-control-sm" id="editProductPrice" step="0.01" required></div>
+                        <div class="mb-2"><label class="form-label small">平台价</label><input type="number" class="form-control form-control-sm" id="editProductPlatformPrice" step="0.01"></div>
+                        <div class="mb-2"><label class="form-label small">库存</label><input type="number" class="form-control form-control-sm" id="editProductStock" required></div>
+                        <div class="mb-2"><label class="form-label small">品类</label><input type="text" class="form-control form-control-sm" id="editProductCategory" required></div>
+                        <div class="mb-2"><label class="form-label small">颜色</label><input type="text" class="form-control form-control-sm" id="editProductColor"></div>
+                        <div class="mb-2"><label class="form-label small">内存/容量</label><input type="text" class="form-control form-control-sm" id="editProductMemory"></div>
+                        <div class="mb-2"><label class="form-label small">运费</label><input type="number" class="form-control form-control-sm" id="editProductShippingFee" step="0.01" value="0"></div>
+                        <div class="form-check mb-2"><input type="checkbox" class="form-check-input" id="editProductInStock"><label class="form-check-label small">有货</label></div>
                     </form>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
-                    <button type="button" class="btn btn-primary" id="saveEditProductBtn">保存</button>
+                    <button type="button" class="btn-sm" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn-sm" id="saveEditProductBtn" style="background:var(--brand);color:#FFF;border:none;">保存</button>
                 </div>
             </div>
         </div>
     </div>
 
+    <!-- marked.js — Markdown 渲染 -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="{{ url_for('static', filename='js/app.js') }}"></script>
 </body>
