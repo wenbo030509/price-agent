@@ -19,6 +19,10 @@
 │  _react_loop()  _plan_and_      │
 │  (ReAct 模式)   execute()       │
 │                 (Plan-Execute)  │
+│       │         Phase 1: Plan   │
+│       │         Phase 2: 每Step │
+│       │         独立mini-ReAct  │
+│       │         Phase 3: 综合   │
 │       │              │          │
 │       └──────┬───────┘          │
 │              ▼                  │
@@ -49,16 +53,17 @@
 | | ReAct 模式 | Plan-Execute 模式 |
 |---|---|---|
 | **适用场景** | 单商品比价、简单查询 | 多商品对比、复杂分析 |
-| **流程** | Thought → Action → Observation → Final Answer 循环 | Phase 1 Plan → Phase 2 Execute（并行） → Phase 3 Synthesize |
-| **LLM 调用次数** | 1-3 次 | 2 次（plan + synthesize） |
-| **工具并行** | 单工具 | 独立步骤 ThreadPoolExecutor 并行 |
-| **模型** | `ARK_MODEL`（默认） | Plan 用 `ARK_MODEL_PLAN`，Synthesize 用 `ARK_MODEL_SYNTHESIZE` |
+| **流程** | Thought → Action → Observation → Final Answer 循环 | Phase 1 Plan → Phase 2 每 Step 独立 mini-ReAct 循环 → Phase 3 Synthesize |
+| **Step 验证** | LLM 每轮自主判断 | 每 Step 内部：执行→观察→空则反思重试/换工具→完成 |
+| **LLM 调用次数** | 1-3 次 | 2 + N×(0~2) 次（N=Step 数，有数据时 Round 1 直接返回无额外调用） |
+| **工具并行** | 单工具 | 独立 Step ThreadPoolExecutor 并行（各 Step 内部 mini-ReAct 互不干扰） |
+| **模型** | `ARK_MODEL`（默认） | Plan 用 `ARK_MODEL_PLAN`，Synthesize 用 `ARK_MODEL_SYNTHESIZE`，Step ReAct 用 `ARK_MODEL` |
 
 ## 功能特性
 
 ### 核心能力
 - **ReAct 推理闭环**：Thought → Action → Observation → Final Answer，思考先行 + 工具调用 + 结果观察 + 最终回答
-- **Plan-Execute 策略**：复杂 query 自动生成 JSON 执行计划，按依赖关系分组并行/串行执行，$step{N} 引用语法实现步骤间数据传递
+- **Plan-Execute 策略**：Phase 1 LLM 生成 JSON 执行计划 → Phase 2 每 Step 独立 mini-ReAct（执行→观察→空则反思重试/换工具/放弃）→ Phase 3 综合回答，`$step{N}` 引用语法实现步骤间数据传递
 - **自反思纠错**：工具返回空结果时，ReAct 模式注入反思提示引导 LLM 重试或追问，Plan-Execute 模式自动放宽属性筛选后重试
 - **多模型路由**：5 个阶段可独立配置模型（默认/Plan/Synthesize/Parse/Vision），平衡质量与成本
 - **滑动窗口上下文**：保留最近 6 轮对话，过滤 ReAct 中间产物，支持"那小米14呢"、"这两个哪个更值得买"等上下文指代
@@ -285,11 +290,11 @@ python3 tests/eval_p4_benchmark.py       # P4 汇总所有阶段
 |------|:------:|------|
 | P0 单元测试 | 100% (43/43) | CRUD、打分匹配、并行查询、回归、复杂度判断、依赖注入、空结果检测、反思消息 |
 | P1 参数提取 | 100% (17/17) | 属性提取 + 品牌别名改写 |
-| P2 端到端 | 94.1% (16/17) | ReAct + Plan-Execute 混合（1 个 false positive） |
+| P2 端到端 | 100% (17/17) | ReAct + Plan-Execute 混合（per-step mini-ReAct） |
 | P3 能力边界 | 100% (15/15) | 不存在商品、歧义、异常、矛盾需求、多轮对话 |
 | P5 优化验证 | 100% (13/13) | 自反思纠错、System Prompt 质量、依赖注入、复杂度路由 |
 | P6 图片搜索 | 100% (7/7) | 工具注册、属性解析、E2E 识别→比价 |
-| **综合** | **99.0% (104/105)** | 唯一失败为 PE-01 Phase 3 合成值（价格差值）误触发幻觉检测 |
+| **综合** | **100% (105/105)** | 全阶段通过 |
 
 ### 各维度指标
 
@@ -297,8 +302,8 @@ python3 tests/eval_p4_benchmark.py       # P4 汇总所有阶段
 |------|:----:|------|
 | 基础功能正确率 | 100% | P0 全通过 |
 | 参数提取准确率 | 100% | 属性+别名全正确 |
-| 答案正确率 | 94.1% | PE-01 false positive |
-| 幻觉率 | ~0% | 无真实幻觉 |
+| 答案正确率 | 100% | 全部正确 |
+| 幻觉率 | 0% | 无 |
 | 优雅降级率 | 100% | 异常输入全部正确处理 |
 | 自反思纠错 | 100% | 空结果自动重试或追问 |
 | System Prompt 遵循 | 100% | 输出格式符合要求 |
