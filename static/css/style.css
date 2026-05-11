@@ -758,37 +758,36 @@ body {
   overflow: hidden;
 }
 
+/* Tab 导航 — 固定高度 */
+.right-panel .nav-tabs { flex-shrink: 0; }
+
+/* Tab 内容区 — 填充剩余高度 */
 .right-panel .tab-content {
   flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  overflow: hidden;
-}
-
-.right-panel .tab-pane {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
   min-height: 0;
 }
 
-.right-panel .tab-pane.active {
-  display: flex;
+.right-panel .tab-content > .tab-pane {
+  height: 100%;
 }
 
-/* 商品 Tab 内部布局 */
-#products {
-  display: flex;
+/* Bootstrap JS 用 inline style 设 display:block，须 !important 覆盖为 flex */
+.right-panel .tab-content > .tab-pane.active {
+  display: flex !important;
   flex-direction: column;
-  min-height: 0;
+  height: 100%;
 }
 
-#products > :not(#productList):not(.mb-3:has(#productSearch)) {
+/* 商品 Tab — flex 列布局，子元素按需收缩 */
+#products > .platform-pills,
+#products > .mb-3:first-of-type,
+#products > hr,
+#products > h6,
+#products > .mb-2 {
   flex-shrink: 0;
 }
 
-/* 商品列表 — 自动填充剩余高度 */
+/* 商品列表 — 自动填充剩余高度并滚动 */
 #productList {
   flex: 1;
   overflow-y: auto;
@@ -810,7 +809,11 @@ body {
 }
 .right-panel .nav-tabs .nav-link:hover { color: var(--brand); }
 
-/* 推理过程 Tab */
+/* 推理/比价 Tab — 滚动 */
+#reasoning, #compare {
+  overflow-y: auto;
+}
+
 #reasoningContent { padding: 0; }
 #reasoningContent .text-muted {
   text-align: center; padding: 40px 20px;
