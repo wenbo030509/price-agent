@@ -72,7 +72,7 @@ def _parse_attrs_from_query(raw_query: str, llm_client: OpenAI, model: str) -> D
 def _get_llm_client():
     from config import Settings
     s = Settings()
-    return s.client, s.model
+    return s.client, s.model_parse  # 属性解析用轻量模型
 
 
 @register_tool(

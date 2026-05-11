@@ -81,13 +81,27 @@ def initialize():
     # 初始化并行查询Agent
     init_parallel_agent()
     
-    # 初始化Agent
+    # 初始化Agent（传入多模型配置和参数）
     agent = ReActAgent(
         client=settings.client,
         model=settings.model,
         tools=tool_registry.get_schemas(),
         tool_map=tool_registry.get_tool_map(),
-        max_round=settings.max_round
+        max_round=settings.max_round,
+        config={
+            # 多模型路由
+            "model_react": getattr(settings, "model", "doubao-seed-2-0-pro-260215"),
+            "model_plan": getattr(settings, "model_plan", "doubao-seed-2-0-code-preview-260215"),
+            "model_synthesize": getattr(settings, "model_synthesize", "doubao-seed-2-0-pro-260215"),
+            # Agent 参数
+            "max_plan_steps": getattr(settings, "max_plan_steps", 8),
+            "max_history_rounds": getattr(settings, "max_history_rounds", 6),
+            "max_history_chars": getattr(settings, "max_history_chars", 6000),
+            "complexity_keywords": getattr(settings, "complexity_keywords", None),
+            "complexity_patterns": getattr(settings, "complexity_patterns", None),
+            "max_reflection_retries": getattr(settings, "max_reflection_retries", 2),
+            "auto_relax_attributes": getattr(settings, "auto_relax_attributes", True),
+        },
     )
 
 
