@@ -12,6 +12,7 @@
 - ✅ **商品管理**：支持添加、编辑、删除商品数据
 - ✅ **多平台比价**：支持京东、淘宝、拼多多、苏宁4个平台并行比价
 - ✅ **多轮对话上下文**：滑动窗口管理历史消息，支持上下文指代（"那小米14呢"）
+- ✅ **Plan-Execute 策略**：复杂 query 自动规划并并行执行工具，简单 query 走传统 ReAct
 
 ### 数据库存储
 - 🗄️ **SQLite文件存储**：每个平台独立数据库 `platform_{jd/taobao/pdd/suning}.db`
@@ -360,6 +361,7 @@ python3 db_manager.py
 - 最大推理轮数
 - 数据库路径
 - 上下文窗口大小（`MAX_HISTORY_ROUNDS` / `MAX_HISTORY_CHARS`）
+- Plan-Execute 策略（`MAX_PLAN_STEPS` / `COMPLEXITY_KEYWORDS`）
 
 ## 评估测试
 
@@ -374,14 +376,16 @@ python3 tests/eval_p3_boundary.py   # P3 能力边界测试
 python3 tests/eval_p4_benchmark.py  # P4 汇总所有阶段
 ```
 
-**最新实测结果（2026-05-11）：综合通过率 96.3% (52/54)**
+**最新实测结果（2026-05-11）：综合通过率 98.2% (56/57)**
+
+> 含 Plan-Execute 策略升级后的增量评估。复杂 query 自动走 Plan-Execute（2 次 LLM），简单 query 走传统 ReAct。
 
 | 阶段 | 通过率 | 说明 |
 |------|--------|------|
 | P0 单元测试 | 100% (18/18) | 数据库 CRUD、打分、并行查询、回归 |
 | P1 参数提取 | 100% (17/17) | 属性提取 + 品牌别名改写 |
-| P2 端到端 | 85.7% (12/14) | ReAct 完整循环，2 个失败为 API 限流 |
-| P3 能力边界 | 80% (12/15) | 8/8 评分通过，3 个 known_missing（已修复） |
+| P2 端到端 | 94.1% (16/17) | 含 3 个 Plan-Execute 专项 case |
+| P3 能力边界 | 80% (12/15) | 8/8 评分通过，3 个 known_missing |
 
 ## 许可证
 
