@@ -124,6 +124,211 @@ def test_parallel(recorder: EvalRecorder):
     agent.close()
 
 
+def test_complexity_detection(recorder: EvalRecorder):
+    """P0-5: 复杂度判断 — 验证 _is_complex() 三层判断逻辑"""
+    from agent.react_engine import ReActAgent
+
+    # 创建一个最小化的 agent（不需要真正调 LLM）
+    agent = ReActAgent(
+        client=None, model="test", tools=[], tool_map={}, max_round=1,
+    )
+
+    # CD-01: 简单单商品查询 → 不触发复杂判定
+    recorder.record("CD-01", not agent._is_complex("iPhone 15 价格"),
+                    {"reason": "简单单商品查询不应判定为complex"})
+
+    # CD-02: 关键词"对比"→ 触发
+    recorder.record("CD-02", agent._is_complex("对比 iPhone 15 和小米14"),
+                    {"reason": "含关键词'对比'应判定为complex"})
+
+    # CD-03: 关键词"哪个更"→ 触发
+    recorder.record("CD-03", agent._is_complex("iPhone 15 和小米14 哪个更值得买"),
+                    {"reason": "含关键词'哪个更'应判定为complex"})
+
+    # CD-04: 关键词"分别"→ 触发
+    recorder.record("CD-04", agent._is_complex("分别查 iPhone 15 和小米14 的价格"),
+                    {"reason": "含关键词'分别'应判定为complex"})
+
+    # CD-05: 正则模式"A和B都"→ 触发
+    recorder.record("CD-05", agent._is_complex("iPhone 15 和小米14 都查一下价格"),
+                    {"reason": "结构模式'A和B都'应判定为complex"})
+
+    # CD-06: 正则模式"哪...最"→ 触发
+    recorder.record("CD-06", agent._is_complex("在哪个平台买iPhone 15最便宜"),
+                    {"reason": "结构模式'哪...最'应判定为complex"})
+
+    # CD-07: 多商品检测 — 两个已知商品
+    recorder.record("CD-07", agent._is_complex("iPhone 15 小米14"),
+                    {"reason": "两个已知商品应判定为complex"})
+
+    # CD-08: 单商品 + 无关键词 → 不触发
+    recorder.record("CD-08", not agent._is_complex("小米14 黑色"),
+                    {"reason": "单商品无复杂关键词不应判定为complex"})
+
+
+def test_dependency_injection(recorder: EvalRecorder):
+    """P0-6: 依赖注入 — 验证 $step{N} 引用解析"""
+    from agent.react_engine import ReActAgent
+
+    agent = ReActAgent(
+        client=None, model="test", tools=[], tool_map={}, max_round=1,
+    )
+
+    # Mock 结果：模拟 Step 1 返回的比价数据
+    mock_results = {
+        1: {
+            "raw_data": {
+                "found": True,
+                "total_matches": 8,
+                "cheapest": {
+                    "platform_id": "pdd",
+                    "platform_name": "拼多多",
+                    "platform_price": 5750,
+                },
+                "most_expensive": {
+                    "platform_id": "suning",
+                    "platform_name": "苏宁",
+                    "platform_price": 6049,
+                },
+            },
+            "formatted_text": "...",
+        }
+    }
+
+    # DI-01: 基本引用解析 — platform_id
+    val = agent._deref("$step1.raw_data.cheapest.platform_id", mock_results)
+    recorder.record("DI-01", val == "pdd",
+                    {"reason": f"$step1.raw_data.cheapest.platform_id = {val}, expected=pdd"})
+
+    # DI-02: 嵌套路径 — platform_price
+    val = agent._deref("$step1.raw_data.cheapest.platform_price", mock_results)
+    recorder.record("DI-02", val == 5750,
+                    {"reason": f"$step1.raw_data.cheapest.platform_price = {val}, expected=5750"})
+
+    # DI-03: 不存在路径 — 返回原始引用
+    val = agent._deref("$step1.raw_data.nonexistent.field", mock_results)
+    recorder.record("DI-03", val == "$step1.raw_data.nonexistent.field",
+                    {"reason": f"不存在路径应返回原始引用, got={val}"})
+
+    # DI-04: 不存在的 step → 返回原始引用
+    val = agent._deref("$step99.raw_data.field", mock_results)
+    recorder.record("DI-04", val == "$step99.raw_data.field",
+                    {"reason": f"不存在step应返回原始引用, got={val}"})
+
+    # DI-05: _resolve_step_refs — 混合引用和非引用
+    args = {
+        "platform_id": "$step1.raw_data.cheapest.platform_id",
+        "product_name": "iPhone 15",
+        "color": None,
+    }
+    resolved = agent._resolve_step_refs(args, mock_results)
+    recorder.record("DI-05",
+                    resolved == {"platform_id": "pdd", "product_name": "iPhone 15", "color": None},
+                    {"reason": f"混合引用解析: {resolved}"})
+
+    # DI-06: 无引用 args → 原样返回
+    args = {"product_name": "小米14", "color": "黑色"}
+    resolved = agent._resolve_step_refs(args, mock_results)
+    recorder.record("DI-06",
+                    resolved == {"product_name": "小米14", "color": "黑色"},
+                    {"reason": f"无引用应原样返回: {resolved}"})
+
+
+def test_empty_result_detection(recorder: EvalRecorder):
+    """P0-7: 空结果检测 — 验证 _is_empty_result()"""
+    from agent.react_engine import ReActAgent
+
+    agent = ReActAgent(
+        client=None, model="test", tools=[], tool_map={}, max_round=1,
+    )
+
+    # ER-01: raw_data found=False → empty
+    recorder.record("ER-01",
+                    agent._is_empty_result({"raw_data": {"found": False, "message": "未找到"}}),
+                    {"reason": "found=False 应判定为空"})
+
+    # ER-02: raw_data total_matches=0 → empty
+    recorder.record("ER-02",
+                    agent._is_empty_result({"raw_data": {"found": True, "total_matches": 0}}),
+                    {"reason": "total_matches=0 应判定为空"})
+
+    # ER-03: raw_data found=True with matches → not empty
+    recorder.record("ER-03",
+                    not agent._is_empty_result({"raw_data": {"found": True, "total_matches": 3}}),
+                    {"reason": "found=True + matches 不应判定为空"})
+
+    # ER-04: success=False → empty
+    recorder.record("ER-04",
+                    agent._is_empty_result({"success": False, "message": "未找到"}),
+                    {"reason": "success=False 应判定为空"})
+
+    # ER-05: success=True → not empty
+    recorder.record("ER-05",
+                    not agent._is_empty_result({"success": True, "product": {"id": 1}}),
+                    {"reason": "success=True 不应判定为空"})
+
+    # ER-06: error dict → not empty (error != empty)
+    recorder.record("ER-06",
+                    not agent._is_empty_result({"error": "连接超时"}),
+                    {"reason": "工具执行错误不应判定为空结果"})
+
+    # ER-07: get_all_platform_products empty → empty
+    recorder.record("ER-07",
+                    agent._is_empty_result({
+                        "raw_data": {"results": {"jd": {"products": []}, "taobao": {"products": []}}}
+                    }),
+                    {"reason": "各平台均无商品应判定为空"})
+
+    # ER-08: get_all_platform_products with data → not empty
+    recorder.record("ER-08",
+                    not agent._is_empty_result({
+                        "raw_data": {"results": {"jd": {"products": [{"id": 1}]}}}
+                    }),
+                    {"reason": "有平台存在商品不应判定为空"})
+
+
+def test_reflection_message(recorder: EvalRecorder):
+    """P0-8: 反思消息构建 — 验证 _build_reflection_message()"""
+    from agent.react_engine import ReActAgent
+
+    agent = ReActAgent(
+        client=None, model="test", tools=[], tool_map={}, max_round=1,
+    )
+
+    # RF-01: 第1次空结果 + 有属性筛选 → 应引导放宽属性
+    msg = agent._build_reflection_message(
+        "multi_platform_price_comparison",
+        {"product_name": "iPhone 15", "color": "紫色", "memory": "1TB"},
+        {"raw_data": {"found": False}},
+        retry_count=1,
+    )
+    recorder.record("RF-01",
+                    "放宽属性" in msg and "color" in msg,
+                    {"reason": f"第1次有属性→引导放宽, msg长度={len(msg)}"})
+
+    # RF-02: 第2次空结果 → 应引导停止并给出替代
+    msg = agent._build_reflection_message(
+        "multi_platform_price_comparison",
+        {"product_name": "华为Mate60"},
+        {"raw_data": {"found": False}},
+        retry_count=2,
+    )
+    recorder.record("RF-02",
+                    "停止重试" in msg and "告知用户" in msg,
+                    {"reason": f"第2次→引导停止并告知用户, msg长度={len(msg)}"})
+
+    # RF-03: 无属性筛选 + 第1次 → 应引导宽泛搜索
+    msg = agent._build_reflection_message(
+        "multi_platform_price_comparison",
+        {"product_name": "诺基亚3310"},
+        {"raw_data": {"found": False}},
+        retry_count=1,
+    )
+    recorder.record("RF-03",
+                    "宽泛" in msg or "更短" in msg or "通用" in msg or "确认" in msg,
+                    {"reason": f"无属性第1次→引导宽泛搜索或确认, msg长度={len(msg)}"})
+
+
 def test_regression(recorder: EvalRecorder):
     """P0-4: 已知 Bug 回归"""
     from platforms.platform_database import PlatformDatabase, init_all_platforms
@@ -210,6 +415,18 @@ def main():
 
     print("\n--- P0-4: Bug 回归 ---")
     test_regression(recorder)
+
+    print("\n--- P0-5: 复杂度判断 ---")
+    test_complexity_detection(recorder)
+
+    print("\n--- P0-6: 依赖注入 ---")
+    test_dependency_injection(recorder)
+
+    print("\n--- P0-7: 空结果检测 ---")
+    test_empty_result_detection(recorder)
+
+    print("\n--- P0-8: 反思消息构建 ---")
+    test_reflection_message(recorder)
 
     summary = recorder.summary()
     print_summary(summary)

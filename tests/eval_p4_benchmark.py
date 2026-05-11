@@ -16,7 +16,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 def find_latest_reports(results_dir: str = "tests/eval_results"):
     """找出各阶段最新的报告文件"""
     reports = {}
-    for phase in ["P0_unit", "P1_parse", "P2_e2e", "P3_boundary"]:
+    for phase in ["P0_unit", "P1_parse", "P2_e2e", "P3_boundary", "P5_optimization"]:
         pattern = os.path.join(results_dir, f"*_{phase}.json")
         files = sorted(glob.glob(pattern))
         if files:
@@ -29,7 +29,7 @@ def load_report(filepath: str) -> dict:
         return json.load(f)
 
 
-def compute_dimension_scores(p0: dict, p1: dict, p2: dict, p3: dict) -> dict:
+def compute_dimension_scores(p0: dict, p1: dict, p2: dict, p3: dict, p5: dict = None) -> dict:
     """从各阶段结果计算维度指标"""
     dims = {}
 
@@ -71,6 +71,19 @@ def compute_dimension_scores(p0: dict, p1: dict, p2: dict, p3: dict) -> dict:
         else:
             dims["优雅降级"] = "N/A"
 
+    # 自反思纠错（P5-1）
+    if p5:
+        sr_cases = [c for c in p5["cases"] if c["case_id"].startswith("SR-")]
+        if sr_cases:
+            passed = sum(1 for c in sr_cases if c["passed"])
+            dims["自反思纠错"] = f"{passed / len(sr_cases) * 100:.1f}%"
+
+        # 追问正确率（P5-2）
+        sp_cases = [c for c in p5["cases"] if c["case_id"].startswith("SP-")]
+        if sp_cases:
+            passed = sum(1 for c in sp_cases if c["passed"])
+            dims["System Prompt 遵循"] = f"{passed / len(sp_cases) * 100:.1f}%"
+
     return dims
 
 
@@ -92,12 +105,13 @@ def main():
     p1 = load_report(reports.get("P1_parse")) if "P1_parse" in reports else None
     p2 = load_report(reports.get("P2_e2e")) if "P2_e2e" in reports else None
     p3 = load_report(reports.get("P3_boundary")) if "P3_boundary" in reports else None
+    p5 = load_report(reports.get("P5_optimization")) if "P5_optimization" in reports else None
 
-    dims = compute_dimension_scores(p0, p1, p2, p3)
+    dims = compute_dimension_scores(p0, p1, p2, p3, p5)
 
     # 汇总所有阶段
     all_cases = []
-    for r in [p0, p1, p2, p3]:
+    for r in [p0, p1, p2, p3, p5]:
         if r:
             for c in r["cases"]:
                 c["_phase"] = r["phase"]
@@ -123,7 +137,7 @@ def main():
         "by_dimension": dims,
     }
 
-    for phase, r in [("P0_unit", p0), ("P1_parse", p1), ("P2_e2e", p2), ("P3_boundary", p3)]:
+    for phase, r in [("P0_unit", p0), ("P1_parse", p1), ("P2_e2e", p2), ("P3_boundary", p3), ("P5_optimization", p5)]:
         if r:
             report["by_phase"][phase] = {
                 "total": r["total"],
