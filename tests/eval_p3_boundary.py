@@ -168,25 +168,90 @@ def test_impossible(recorder: EvalRecorder, runner: BoundaryRunner):
         print(f"  {status} {case_id}: error={has_error}")
 
 
-def test_multiturn_known_missing(recorder: EvalRecorder):
-    """P3-5: 多轮对话 — 当前未实现，预期失败"""
-    cases = [
-        ("BD-13", "多轮对话：第1轮 iPhone 15 最便宜 | 第2轮 那小米14呢",
-         "需要 history 参数支持"),
-        ("BD-14", "多轮对话：京东查 iPhone 15 | 切换到淘宝",
-         "需要 history 参数支持"),
-        ("BD-15", "多轮对话：所有平台商品 | 筛选手机类",
-         "需要 history 参数支持"),
+def test_multiturn(recorder: EvalRecorder, runner: BoundaryRunner):
+    """P3-5: 多轮对话 — 验证滑动窗口上下文"""
+    print("\n--- P3-5: 多轮对话 ---")
+
+    # BD-13: 第1轮查 iPhone 15 → 第2轮问 "那小米14呢"（指代"最便宜"）
+    print("  BD-13: Round 1...")
+    r1 = runner.run_one("iPhone 15 在哪个平台最便宜")
+    a1 = r1["answer"]
+    has_iphone_price = "¥" in a1 or "元" in a1
+
+    history = [
+        {"role": "user", "content": "iPhone 15 在哪个平台最便宜"},
+        {"role": "assistant", "content": a1},
     ]
-    print("\n--- P3-5: 多轮对话（known_missing）---")
-    for case_id, note, reason in cases:
-        recorder.record(case_id, False, {
-            "note": note,
-            "reason": reason,
-            "status": "known_missing",
-            "skipped": True,
-        })
-        print(f"  ⊘ {case_id}: {reason}")
+    # 直接用 agent.run 调用（带 history），不走 run_one
+    import time
+    start = time.time()
+    try:
+        a2 = runner.agent.run("那小米14呢", history=history, verbose=False)
+    except Exception as e:
+        a2 = f"[ERROR] {e}"
+    elapsed = int((time.time() - start) * 1000)
+
+    understands_ref = "小米" in a2 and has_iphone_price
+    recorder.record("BD-13", understands_ref, {
+        "query_round1": "iPhone 15 在哪个平台最便宜",
+        "query_round2": "那小米14呢",
+        "answer_round2_preview": a2[:200],
+        "understands_reference": understands_ref,
+        "round2_time_ms": elapsed,
+    })
+    print(f"  {'✓' if understands_ref else '✗'} BD-13: 理解指代={understands_ref}, {elapsed}ms")
+
+    # BD-14: 京东查 iPhone 15 → "淘宝呢"（切换平台）
+    print("  BD-14: Round 1...")
+    r3 = runner.run_one("在京东查 iPhone 15 的价格")
+    a3 = r3["answer"]
+
+    history2 = [
+        {"role": "user", "content": "在京东查 iPhone 15 的价格"},
+        {"role": "assistant", "content": a3},
+    ]
+    start = time.time()
+    try:
+        a4 = runner.agent.run("淘宝呢", history=history2, verbose=False)
+    except Exception as e:
+        a4 = f"[ERROR] {e}"
+    elapsed2 = int((time.time() - start) * 1000)
+
+    switch_ok = "淘宝" in a4
+    recorder.record("BD-14", switch_ok, {
+        "query_round1": "在京东查 iPhone 15 的价格",
+        "query_round2": "淘宝呢",
+        "answer_round2_preview": a4[:200],
+        "platform_switched": switch_ok,
+        "round2_time_ms": elapsed2,
+    })
+    print(f"  {'✓' if switch_ok else '✗'} BD-14: 平台切换={switch_ok}, {elapsed2}ms")
+
+    # BD-15: "这两个哪个更值得买"（指代两个产品）
+    print("  BD-15: Round 1...")
+    r5 = runner.run_one("对比 iPhone 15 和小米14")
+    a5 = r5["answer"]
+
+    history3 = [
+        {"role": "user", "content": "对比 iPhone 15 和小米14"},
+        {"role": "assistant", "content": a5},
+    ]
+    start = time.time()
+    try:
+        a6 = runner.agent.run("这两个哪个更值得买", history=history3, verbose=False)
+    except Exception as e:
+        a6 = f"[ERROR] {e}"
+    elapsed3 = int((time.time() - start) * 1000)
+
+    mentions_both = ("iPhone" in a6 or "苹果" in a6) and "小米" in a6
+    recorder.record("BD-15", mentions_both, {
+        "query_round1": "对比 iPhone 15 和小米14",
+        "query_round2": "这两个哪个更值得买",
+        "answer_round2_preview": a6[:200],
+        "mentions_both_products": mentions_both,
+        "round2_time_ms": elapsed3,
+    })
+    print(f"  {'✓' if mentions_both else '✗'} BD-15: 理解指代={mentions_both}, {elapsed3}ms")
 
 
 def main():
@@ -202,13 +267,12 @@ def main():
         test_ambiguous(recorder, runner)
         test_malformed(recorder, runner)
         test_impossible(recorder, runner)
+        test_multiturn(recorder, runner)
         runner.cleanup()
     except Exception as e:
-        print(f"\n  ⚠ LLM API 错误（可能欠费）: {e}")
+        print(f"\n  ⚠ LLM API 错误: {e}")
         print("  继续生成部分报告...")
         runner = None
-
-    test_multiturn_known_missing(recorder)
 
     summary = recorder.summary()
 
