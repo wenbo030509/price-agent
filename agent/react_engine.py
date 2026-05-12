@@ -66,9 +66,10 @@ class ReActAgent:
         self.max_plan_steps = cfg.get("max_plan_steps", 8)
         self.max_history_rounds = cfg.get("max_history_rounds", 6)
         self.max_history_chars = cfg.get("max_history_chars", 6000)
+        # "推荐"/"建议" 已由 _detect_intent 接管，不在 complexity 中重复触发
         self.complexity_keywords = cfg.get("complexity_keywords", [
             "对比", "比较", "vs", "和", "与", "以及", "还有",
-            "分析", "推荐", "建议", "哪个更", "怎么选", "哪个好",
+            "分析", "哪个更", "怎么选", "哪个好",
             "并且", "同时", "还要", "另外", "分别",
         ])
         self.complexity_patterns = cfg.get("complexity_patterns", [
@@ -167,18 +168,35 @@ class ReActAgent:
         has_budget = any(w in query for w in ["以内", "以下", "不超过", "预算", "多少钱以内"])
         has_processor = any(kw in query for kw in _PROCESSOR_TRIGGERS)
 
+        # "最便宜"/"哪里便宜" 等是查价意图，不算推荐触发
+        has_price_lookup = any(w in query for w in ["最便宜", "哪里便宜", "哪个平台", "多少钱", "什么价格"])
+        has_recommend_trigger = (has_use_case or has_recommend_word or has_budget or has_processor) and not has_price_lookup
+
         # 有明确型号的不算推荐（如"推荐iPhone15"是查价，不是推荐）
         model_count = self._count_models(query)
+        is_complex = self._is_complex(query)
 
-        if (has_use_case or has_recommend_word or has_budget or has_processor) and model_count == 0:
+        # "推荐" + 单型号 + 无场景/预算/处理器限定 = 只是查价
+        if has_recommend_trigger and model_count >= 1:
+            only_recommend_word = has_recommend_word and not (has_use_case or has_budget or has_processor)
+            if only_recommend_word and not is_complex:
+                return "query"
+
+        # 混合意图：推荐触发 + 含对比/多步骤证据 → Plan-Execute
+        # 例："推荐游戏手机，然后和iPhone 15对比"、"骁龙手机推荐，再和苹果比较"
+        if has_recommend_trigger and is_complex:
+            return "comparison"
+
+        # 纯推荐：有触发词 + 无对比证据 → ReAct + intent_hint
+        if has_recommend_trigger:
             return "recommendation"
 
-        # 有明确型号的单商品查询 → 直接走 query（避免被 _is_complex 的"推荐"等词误判为 comparison）
+        # 有明确型号的单商品查询 → 直接走 query
         if model_count == 1:
             return "query"
 
         # 对比意图：多个商品 或 含对比词
-        if self._is_complex(query):
+        if is_complex:
             return "comparison"
 
         return "query"
