@@ -51,14 +51,26 @@ class PlatformAgent:
         product_name: str,
         color: Optional[str] = None,
         memory: Optional[str] = None,
+        processor_brand: Optional[str] = None,
+        processor_hint: Optional[str] = None,
+        use_case: Optional[str] = None,
+        performance_tier: Optional[str] = None,
+        budget_max: Optional[float] = None,
+        budget_min: Optional[float] = None,
     ) -> List[Dict]:
-        """按属性查询所有匹配商品（模糊查询用）"""
+        """按属性查询所有匹配商品（模糊查询用，6 维评分）"""
         with self._lock:
             try:
                 return self.db.query_products_by_attrs(
                     product_name=product_name,
                     color=color,
                     memory=memory,
+                    processor_brand=processor_brand,
+                    processor_hint=processor_hint,
+                    use_case=use_case,
+                    performance_tier=performance_tier,
+                    budget_max=budget_max,
+                    budget_min=budget_min,
                 )
             except Exception as e:
                 print(f"⚠️  {self.config['name']}查询出错: {e}")
@@ -187,11 +199,17 @@ class PlatformParallelAgent:
         product_name: str,
         color: Optional[str] = None,
         memory: Optional[str] = None,
+        processor_brand: Optional[str] = None,
+        processor_hint: Optional[str] = None,
+        use_case: Optional[str] = None,
+        performance_tier: Optional[str] = None,
+        budget_max: Optional[float] = None,
+        budget_min: Optional[float] = None,
         timeout: int = 10
     ) -> Dict:
         """
         比价查询：在所有平台并行查询，返回各平台所有匹配商品及比价分析。
-        模糊查询时会返回该平台所有候选商品。
+        支持 IT3C 全量属性过滤（处理器/场景/预算/性能层级）。
         """
         executor = self._get_executor()
         futures = {}
@@ -202,6 +220,12 @@ class PlatformParallelAgent:
                 product_name,
                 color=color,
                 memory=memory,
+                processor_brand=processor_brand,
+                processor_hint=processor_hint,
+                use_case=use_case,
+                performance_tier=performance_tier,
+                budget_max=budget_max,
+                budget_min=budget_min,
             )
             futures[future] = platform_id
 

@@ -58,3 +58,6 @@ temp/
 *.tmp
 
 static/uploads/
+
+# 评估报告（自动生成，不入库）
+tests/eval_results/
