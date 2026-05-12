@@ -13,33 +13,35 @@ class Settings:
 
     def _load_api_config(self):
         """加载API配置"""
-        self.api_key = os.getenv("ARK_API_KEY")
+        # DeepSeek API（OpenAI 兼容）
+        self.api_key = os.getenv("DEEPSEEK_API_KEY")
         if not self.api_key:
             raise ValueError(
-                "ARK_API_KEY 未设置。请在 .env 文件中配置 ARK_API_KEY=your_key"
+                "DEEPSEEK_API_KEY 未设置。请在 .env 文件中配置 DEEPSEEK_API_KEY=your_key"
             )
-        self.base_url = "https://ark.cn-beijing.volces.com/api/v3"
+        self.base_url = "https://api.deepseek.com"
 
         # ── 多模型路由配置 ──
-        # 不同阶段使用不同模型，平衡成本与质量
-        # 可通过 .env 环境变量覆盖，不设置则使用默认值
+        # 文本模型统一使用 DeepSeek
         self.model = os.getenv(
-            "ARK_MODEL", "doubao-seed-2-0-pro-260215"
+            "DEEPSEEK_MODEL", "deepseek-v4-flash"
         )  # 默认/兜底模型（ReAct 循环）
         self.model_plan = os.getenv(
-            "ARK_MODEL_PLAN", "doubao-seed-2-0-code-preview-260215"
-        )  # Phase 1 Plan 生成（结构化 JSON）
+            "DEEPSEEK_MODEL_PLAN", "deepseek-v4-flash"
+        )  # Phase 1 Plan 生成
         self.model_synthesize = os.getenv(
-            "ARK_MODEL_SYNTHESIZE", "doubao-seed-2-0-pro-260215"
-        )  # Phase 3 综合回答（分析深度）
+            "DEEPSEEK_MODEL_SYNTHESIZE", "deepseek-v4-flash"
+        )  # Phase 3 综合回答
         self.model_parse = os.getenv(
-            "ARK_MODEL_PARSE", "doubao-seed-2-0-pro-260215"
+            "DEEPSEEK_MODEL_PARSE", "deepseek-v4-flash"
         )  # 属性解析（简单提取）
+
+        # 视觉模型暂不更换，仍使用豆包
         self.model_vision = os.getenv(
             "ARK_VISION_MODEL", "doubao-seed-2-0-pro-260215"
         )  # 图片识别（多模态模型）
 
-        # 共享 client（同 endpoint，只需一个）
+        # 文本模型共享 DeepSeek client
         self.client = OpenAI(
             api_key=self.api_key,
             base_url=self.base_url

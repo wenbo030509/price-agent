@@ -27,46 +27,73 @@ def get_parallel_agent() -> PlatformParallelAgent:
 
 
 def _parse_attrs_from_query(raw_query: str, llm_client: OpenAI, model: str) -> Dict:
-    prompt = f"""从用户输入中提取商品属性，只输出 JSON，不要其他任何文字。
+    prompt = f"""你是一个商品属性提取助手，专注于 IT3C 数字产品（手机、平板、耳机、电脑等）。
+从用户输入中提取商品属性，只输出 JSON，不要任何其他文字、解释或 markdown 代码块。
 
 用户输入：{raw_query}
 
-输出格式（所有字段都必须有，未提及的填空字符串""）：
+输出格式（所有字段必须存在，未提及的填 null，字符串类型未提及填 ""）：
 {{
-  "product_name": "商品核心名称（去掉颜色内存等修饰词）",
-  "color": "颜色（如黑色、白色、蓝色，未提及填""）",
-  "memory": "内存或容量（如128GB、256GB、512GB，未提及填""）",
-  "category": "品类（如手机、平板、耳机，不确定填""）"
+  "product_name": "商品核心名称（去掉颜色/内存/处理器等修饰词后的型号名）",
+  "brand": "品牌名（Apple/小米/华为/OPPO/vivo/三星/荣耀，未知填\"\"）",
+  "color": "颜色（黑色/白色/蓝色等，未提及填\"\"）",
+  "memory": "内存或容量（128GB/256GB/512GB/1TB等，未提及填\"\"）",
+  "category": "品类（手机/平板/耳机/电脑，不确定填\"\"）",
+  "processor_hint": "用户提到的处理器关键词（如\"骁龙8Gen3\"\"天玑9300\"\"A17\"，未提及填\"\"）",
+  "processor_brand": "处理器厂商归一化：sd(骁龙/高通) mt(天玑/联发科) apple(A系列/M系列) kirin(麒麟)，未提及填\"\"",
+  "performance_tier": "性能层级：flagship(旗舰/高端) mid(中端) budget(入门/便宜)，未提及填\"\"",
+  "use_case": "使用场景标签，只能从以下选：gaming photography battery business student budget flagship，未提及填\"\"，多个用逗号分隔",
+  "budget_max": "最高预算数字（元），未提及填 null。识别：\"5000以内\"→5000，\"不超过4000\"→4000，\"三四千\"→4000",
+  "budget_min": "最低预算数字（元），未提及填 null。识别：\"5000以上\"→5000，\"旗舰级\"→4999"
 }}
 
-重要：请将以下口语化/别名替换为标准商品名称：
-- "水果手机"、"苹果手机" → "iPhone"
-- "水果手表"、"苹果手表"、"苹果表" → "Apple Watch"
-- "水果平板"、"苹果平板" → "iPad"
-- "华为手机" → "华为"
-- "小米手机" → "小米"
-- "ip15" → "iPhone 15"
-- "米14" → "小米14"
-- 类似常见简称也请替换为标准名称"""
+## 品牌/别名标准化规则（必须执行）：
+- "水果手机"/"苹果手机"/"ip" 开头 → brand="Apple"，product_name 对应型号
+- "ip15"/"ip16" → product_name="iPhone 15"/"iPhone 16"
+- "米14"/"mi14" → product_name="小米14"，brand="小米"
+- "华为mate" → brand="华为"
+- "三星s系列" → brand="三星"
+
+## 示例：
+输入："我打游戏，5000以内推荐什么手机，骁龙处理器的"
+输出：{{"product_name":"","brand":"","color":"","memory":"","category":"手机","processor_hint":"骁龙","processor_brand":"sd","performance_tier":"","use_case":"gaming","budget_max":5000,"budget_min":null}}
+
+输入："iPhone 15 黑色256GB哪里最便宜"
+输出：{{"product_name":"iPhone 15","brand":"Apple","color":"黑色","memory":"256GB","category":"手机","processor_hint":"","processor_brand":"apple","performance_tier":"flagship","use_case":"","budget_max":null,"budget_min":null}}
+
+输入："天玑9300的手机"
+输出：{{"product_name":"","brand":"","color":"","memory":"","category":"手机","processor_hint":"天玑9300","processor_brand":"mt","performance_tier":"","use_case":"","budget_max":null,"budget_min":null}}"""
 
     try:
         resp = llm_client.chat.completions.create(
             model=model,
             messages=[{"role": "user", "content": prompt}],
             temperature=0,
-            max_tokens=150,
+            max_tokens=500,  # DeepSeek 模型含 thinking tokens，需更大预算
         )
         raw = resp.choices[0].message.content.strip()
         raw = raw.strip("`").lstrip("json").strip()
         attrs = json.loads(raw)
         return {
-            "product_name": attrs.get("product_name", raw_query) or raw_query,
-            "color": attrs.get("color", ""),
-            "memory": attrs.get("memory", ""),
-            "category": attrs.get("category", ""),
+            "product_name":     attrs.get("product_name", raw_query) or raw_query,
+            "brand":            attrs.get("brand", "") or "",
+            "color":            attrs.get("color", "") or "",
+            "memory":           attrs.get("memory", "") or "",
+            "category":         attrs.get("category", "") or "",
+            "processor_hint":   attrs.get("processor_hint", "") or "",
+            "processor_brand":  attrs.get("processor_brand", "") or "",
+            "performance_tier": attrs.get("performance_tier", "") or "",
+            "use_case":         attrs.get("use_case", "") or "",
+            "budget_max":       attrs.get("budget_max"),      # 可以是 None
+            "budget_min":       attrs.get("budget_min"),      # 可以是 None
         }
     except Exception:
-        return {"product_name": raw_query, "color": "", "memory": "", "category": ""}
+        return {
+            "product_name": raw_query, "brand": "", "color": "", "memory": "",
+            "category": "", "processor_hint": "", "processor_brand": "",
+            "performance_tier": "", "use_case": "",
+            "budget_max": None, "budget_min": None,
+        }
 
 
 def _get_llm_client():
@@ -116,6 +143,10 @@ def multi_platform_price_comparison(
     needs_parse = (not color and not memory and
                    any(kw in product_name for kw in attr_keywords))
 
+    # IT3C 扩展属性（默认空，LLM 解析后覆盖）
+    attrs = {"processor_brand": None, "processor_hint": None,
+             "use_case": None, "budget_max": None, "budget_min": None}
+
     if needs_parse:
         client, model = _get_llm_client()
         attrs = _parse_attrs_from_query(product_name, client, model)
@@ -128,6 +159,11 @@ def multi_platform_price_comparison(
         product_name,
         color=color or None,
         memory=memory or None,
+        processor_brand=attrs.get("processor_brand") or None,
+        processor_hint=attrs.get("processor_hint") or None,
+        use_case=attrs.get("use_case") or None,
+        budget_max=attrs.get("budget_max"),
+        budget_min=attrs.get("budget_min"),
     )
     formatted_text = format_comparison_result(comparison)
 

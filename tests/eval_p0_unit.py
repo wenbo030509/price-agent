@@ -367,7 +367,7 @@ def test_regression(recorder: EvalRecorder):
     result = subprocess.run(
         [sys.executable, "-c", """
 import os
-os.environ["ARK_API_KEY"] = ""
+os.environ["DEEPSEEK_API_KEY"] = ""
 try:
     from config.settings import Settings
     print("NO_ERROR")
@@ -375,7 +375,7 @@ except ValueError:
     print("VALUE_ERROR")
 """],
         capture_output=True, text=True,
-        env={**os.environ, "ARK_API_KEY": ""}
+        env={**os.environ, "DEEPSEEK_API_KEY": ""}
     )
     recorder.record("RG-04", "VALUE_ERROR" in result.stdout + result.stderr,
                     {"reason": f"stdout={result.stdout.strip()}, stderr={result.stderr.strip()}"})

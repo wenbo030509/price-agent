@@ -10,8 +10,6 @@ from config import Settings
 from database import (
     DatabaseConnection,
     init_mock_db,
-    add_product,
-    get_all_products,
     create_session,
     get_all_sessions,
     add_message,
@@ -68,9 +66,9 @@ def initialize():
     # 初始化数据库（使用文件数据库而不是内存数据库）
     db = DatabaseConnection("price_agent.db")
     
-    # 检查数据库是否已初始化
+    # 检查数据库是否已初始化（主 DB 只管理会话，不再存商品）
     cursor = db.get_cursor()
-    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='products'")
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='sessions'")
     if not cursor.fetchone():
         init_mock_db(db)
     
@@ -119,23 +117,47 @@ def index():
 
 @app.route('/api/products', methods=['GET'])
 def get_products():
-    """获取所有商品"""
-    products = get_all_products(db)
-    return jsonify({"success": True, "products": products})
+    """获取所有商品 — 从各平台 DB 聚合，同名商品只保留最低价"""
+    try:
+        parallel_agent = get_parallel_agent()
+        result = parallel_agent.query_all_products_parallel()
+
+        # 聚合所有平台商品，按 product_name 去重，保留最低价
+        best_by_name = {}
+        for platform_id, data in result.get("results", {}).items():
+            for p in data.get("products", []):
+                name = p.get("product_name", "")
+                price = p.get("platform_price", p.get("price", 0))
+                if name not in best_by_name or price < best_by_name[name].get("platform_price", float("inf")):
+                    best_by_name[name] = p
+
+        products = sorted(best_by_name.values(), key=lambda x: x.get("price", 0))
+        return jsonify({"success": True, "products": products})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
 @app.route('/api/products', methods=['POST'])
 def create_product():
-    """添加新商品"""
+    """添加新商品 — 需指定 platform_id，写入对应平台 DB"""
     data = request.json
+    platform_id = data.get("platform_id")
+    if not platform_id:
+        return jsonify({"success": False, "error": "缺少 platform_id 参数"}), 400
     try:
-        product = add_product(
-            db,
-            product_name=data['product_name'],
-            price=_safe_float(data.get('price'), 0),
-            stock=_safe_int(data.get('stock'), 0),
-            category=data.get('category', '')
+        platform_db = PlatformDatabase(platform_id)
+        product = platform_db.add_product(
+            product_name=data.get("product_name", ""),
+            price=_safe_float(data.get("price"), 0),
+            stock=_safe_int(data.get("stock"), 0),
+            category=data.get("category", ""),
+            platform_price=_safe_float(data.get("platform_price") or data.get("price")),
+            shipping_fee=_safe_float(data.get("shipping_fee"), 0),
+            is_in_stock=bool(data.get("is_in_stock", True)),
+            color=data.get("color"),
+            memory=data.get("memory"),
         )
+        platform_db.close()
         return jsonify({"success": True, "product": product})
     except (ValueError, KeyError) as e:
         return jsonify({"success": False, "error": f"参数错误: {e}"}), 400

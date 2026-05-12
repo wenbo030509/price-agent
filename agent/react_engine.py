@@ -6,6 +6,37 @@ from openai import OpenAI
 from .prompts import SYSTEM_PROMPT, PLAN_PROMPT_TEMPLATE
 
 
+# ── 意图分类触发词 ──────────────────────────────────────────────────────────
+
+# 使用场景触发词 → use_case 标签的映射
+USE_CASE_TRIGGER_MAP: Dict[str, str] = {
+    # gaming
+    "游戏": "gaming", "打游戏": "gaming", "电竞": "gaming",
+    "帧率": "gaming", "散热好": "gaming", "吃鸡": "gaming",
+    # photography
+    "拍照": "photography", "摄影": "photography", "相机": "photography",
+    "vlog": "photography", "拍视频": "photography", "夜拍": "photography",
+    # battery
+    "续航": "battery", "大电池": "battery", "耐用": "battery",
+    "不充电": "battery", "省电": "battery",
+    # business
+    "商务": "business", "办公": "business", "轻薄": "business",
+    # student
+    "学生": "student", "上学": "student", "学习用": "student",
+    # budget
+    "便宜": "budget", "实惠": "budget", "入门": "budget", "性价比": "budget",
+    # flagship
+    "旗舰": "flagship", "高端": "flagship", "顶配": "flagship",
+}
+
+# 处理器关键词（补充触发推荐意图）
+_PROCESSOR_TRIGGERS = [
+    "骁龙", "天玑", "麒麟", "猎户座", "高通", "联发科",
+    "A17", "A16", "A15", "A14", "M2", "M3",
+    "8Gen", "8gen", "9Gen", "9gen", "9300", "9200",
+]
+
+
 class ReActAgent:
     """ReAct 推理引擎，支持 Plan-Execute 策略、滑动窗口上下文、自反思纠错"""
 
@@ -58,22 +89,28 @@ class ReActAgent:
         verbose: bool = True
     ) -> str:
         """
-        运行 Agent。复杂 query 走 Plan-Execute，简单 query 走传统 ReAct。
-
-        :param user_query: 当前用户输入
-        :param history:   历史对话，格式 [{"role":"user","content":"..."}, ...]
-        :param verbose:   是否打印推理过程
-        :return:          最终答案
+        运行 Agent。根据意图分类路由到不同的执行模式。
+        - recommendation：推荐型 → ReAct + intent hint
+        - comparison：Plan-Execute
+        - query：ReAct
         """
         if history:
             history = self._slide_window(history)
 
-        if self._is_complex(user_query):
+        intent = self._detect_intent(user_query)
+
+        if intent == "recommendation":
             if verbose:
-                print(f"\n[Plan-Execute] 检测到复杂 query，启用规划模式")
+                print(f"\n[Intent: recommendation] 启用语义推荐模式")
+            return self._react_loop(user_query, history, verbose, intent_hint="recommendation")
+
+        elif intent == "comparison":
+            if verbose:
+                print(f"\n[Intent: comparison] 启用 Plan-Execute 对比模式")
             return self._plan_and_execute(user_query, history, verbose)
 
-        return self._react_loop(user_query, history, verbose)
+        else:  # query
+            return self._react_loop(user_query, history, verbose)
 
     # ── 复杂度判断 ────────────────────────────────────────────────────
 
@@ -112,6 +149,44 @@ class ReActAgent:
             return list(hints) if hints else ["iPhone", "小米", "iPad", "AirPods", "华为"]
         except Exception:
             return ["iPhone", "小米", "iPad", "AirPods", "华为"]
+
+    # ── 意图分类 ────────────────────────────────────────────────────────
+
+    def _detect_intent(self, query: str) -> str:
+        """
+        分类用户意图：
+        - "recommendation"：推荐型，如"推荐游戏手机"、"5000以内什么手机好"
+        - "comparison"：对比型，如"iPhone 15 和小米14哪个好"
+        - "query"：查价型，如"iPhone 15 京东多少钱"
+
+        返回 "recommendation" / "comparison" / "query"
+        """
+        # 推荐意图检测
+        has_use_case = any(kw in query for kw in USE_CASE_TRIGGER_MAP)
+        has_recommend_word = any(w in query for w in ["推荐", "建议", "适合", "哪款好", "什么手机", "选什么"])
+        has_budget = any(w in query for w in ["以内", "以下", "不超过", "预算", "多少钱以内"])
+        has_processor = any(kw in query for kw in _PROCESSOR_TRIGGERS)
+
+        # 有明确型号的不算推荐（如"推荐iPhone15"是查价，不是推荐）
+        model_count = self._count_models(query)
+
+        if (has_use_case or has_recommend_word or has_budget or has_processor) and model_count == 0:
+            return "recommendation"
+
+        # 有明确型号的单商品查询 → 直接走 query（避免被 _is_complex 的"推荐"等词误判为 comparison）
+        if model_count == 1:
+            return "query"
+
+        # 对比意图：多个商品 或 含对比词
+        if self._is_complex(query):
+            return "comparison"
+
+        return "query"
+
+    def _count_models(self, query: str) -> int:
+        """统计 query 中包含的已知商品型号数量"""
+        product_hints = self._load_product_hints()
+        return sum(1 for h in product_hints if h.lower() in query.lower())
 
     # ── Plan-Execute 模式 ─────────────────────────────────────────────
 
@@ -413,21 +488,37 @@ class ReActAgent:
         return resolved
 
     def _deref(self, ref: str, results: Dict[int, Dict]):
-        """解析单个 $step{N}.path.to.field 引用"""
+        """解析单个 $step{N}.path.to.field 引用，支持 recommendations[0] 列表索引"""
         m = re.match(r'\$step(\d+)\.(.+)', ref)
         if not m:
             return ref
         step_num = int(m.group(1))
         path = m.group(2).split('.')
-        result = results.get(step_num, {})
-        for p in path:
-            if isinstance(result, dict):
-                result = result.get(p)
-            else:
-                return ref  # 无法继续解析
-            if result is None:
+        current = results.get(step_num, {})
+        for part in path:
+            if current is None:
                 return ref
-        return result
+            if isinstance(current, list):
+                # 纯数字索引（如路径里直接出现 "0"）
+                try:
+                    current = current[int(part)]
+                except (ValueError, IndexError):
+                    return ref
+            elif isinstance(current, dict):
+                # 支持 recommendations[0] 带索引的路径
+                idx_m = re.match(r'^(\w+)\[(\d+)\]$', part)
+                if idx_m:
+                    key, idx = idx_m.group(1), int(idx_m.group(2))
+                    inner = current.get(key)
+                    if isinstance(inner, list) and idx < len(inner):
+                        current = inner[idx]
+                    else:
+                        return ref
+                else:
+                    current = current.get(part)
+            else:
+                return ref
+        return current
 
     # ── Phase 3: Synthesize ───────────────────────────────────────────
 
@@ -543,10 +634,17 @@ class ReActAgent:
         self,
         user_query: str,
         history: Optional[List[Dict]],
-        verbose: bool
+        verbose: bool,
+        intent_hint: str = "query"
     ) -> str:
-        """传统 ReAct 循环（含自反思纠错机制）"""
+        """传统 ReAct 循环（含自反思纠错机制）。intent_hint 用于注入工具选择提示。"""
         messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+
+        if intent_hint == "recommendation":
+            messages.append({
+                "role": "system",
+                "content": "【意图提示】当前用户需求是商品推荐，请优先调用 semantic_product_search 工具，而不是 multi_platform_price_comparison。"
+            })
 
         if history:
             messages.extend(history)
