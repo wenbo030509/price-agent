@@ -771,27 +771,26 @@ body {
   height: 100%;
 }
 
-/* Bootstrap JS 用 inline style 设 display:block，须 !important 覆盖为 flex */
+/* Bootstrap JS 用 inline style 设 display:block，须 !important 覆盖 */
 .right-panel .tab-content > .tab-pane.active {
-  display: flex !important;
-  flex-direction: column;
+  display: block !important;
   height: 100%;
-}
-
-/* 商品 Tab — flex 列布局，子元素按需收缩 */
-#products > .platform-pills,
-#products > .mb-3:first-of-type,
-#products > hr,
-#products > h6,
-#products > .mb-2 {
-  flex-shrink: 0;
-}
-
-/* 商品列表 — 自动填充剩余高度并滚动 */
-#productList {
-  flex: 1;
   overflow-y: auto;
-  min-height: 0;
+}
+
+/* 商品 Tab 内的搜索/按钮区域不参与 flex */
+#products .platform-pills,
+#products .mb-3:first-of-type,
+#products hr,
+#products h6,
+#products .mb-2 {
+  /* natural flow */
+}
+
+/* 商品列表 — 自适应高度，随卡片数量/展开状态自然增长 */
+#productList {
+  /* no height constraint — grows with content */
+  padding-bottom: 16px;
 }
 
 .right-panel .nav-tabs { border-bottom: 1px solid var(--border); margin-bottom: 14px; }
@@ -833,16 +832,113 @@ body {
   border-color: var(--brand-border);
 }
 
-.product-list { overflow-y: auto; }
+.product-list { overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding: 4px 0; }
 .product-item {
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--border-light);
+  padding: 0;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--bg-card);
   font-size: 13px;
+  overflow: hidden;
+  transition: box-shadow .15s;
 }
-.product-item:hover { background: var(--bg-hover); }
-.product-name { font-weight: 600; font-size: 14px; }
-.product-info { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
-.product-info .price { font-family: 'JetBrains Mono', monospace; font-weight: 500; color: var(--brand); }
+.product-item:hover { box-shadow: var(--shadow-md); }
+
+.product-card-main {
+  padding: 10px 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+.product-card-main:hover { background: var(--bg-hover); }
+
+.product-card-left { flex: 1; min-width: 0; }
+.product-card-title {
+  font-weight: 600; font-size: 14px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.product-card-title .brand-tag {
+  font-size: 11px; font-weight: 500;
+  padding: 1px 6px; border-radius: 3px;
+  background: var(--brand-bg); color: var(--brand);
+  margin-right: 6px;
+}
+.product-card-meta {
+  font-size: 11px; color: var(--text-secondary);
+  margin-top: 4px;
+  display: flex; flex-wrap: wrap; gap: 4px 12px;
+}
+.product-card-meta .price {
+  font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 15px;
+  color: var(--brand);
+}
+.product-card-meta .tier {
+  font-size: 10px; padding: 1px 5px; border-radius: 3px;
+  font-weight: 500;
+}
+.tier-flagship { background: #FEF3C7; color: #92400E; }
+.tier-mid { background: #DBEAFE; color: #1E40AF; }
+.tier-budget { background: #F3F4F6; color: #374151; }
+
+.product-card-specs {
+  font-size: 11px; color: var(--text-tertiary);
+  margin-top: 3px;
+  display: flex; flex-wrap: wrap; gap: 2px 10px;
+}
+.product-card-actions { display: flex; flex-direction: column; gap: 4px; flex-shrink: 0; }
+.product-card-actions .btn-sm { padding: 2px 8px; font-size: 11px; }
+
+.product-card-expand {
+  padding: 8px 14px;
+  border-top: 1px solid var(--border-light);
+  background: var(--bg-input);
+  font-size: 12px;
+  color: var(--text-secondary);
+  display: none;
+  line-height: 1.55;
+}
+.product-card-expand.show { display: block; }
+.product-card-expand .tags-row {
+  display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px;
+}
+.product-card-expand .tag-chip {
+  font-size: 10px; padding: 2px 8px; border-radius: var(--radius-full);
+  background: var(--bg-card); border: 1px solid var(--border);
+  color: var(--text-secondary);
+}
+
+/* ── 分组表单 ── */
+.add-product-form { display: flex; flex-direction: column; gap: 6px; }
+.form-group-title {
+  font-size: 12px; font-weight: 600; color: var(--text-secondary);
+  text-transform: uppercase; letter-spacing: 0.05em;
+  padding: 6px 0 2px;
+}
+.form-row-2 { display: flex; gap: 8px; }
+.form-row-2 > * { flex: 1; min-width: 0; }
+.form-group-toggle {
+  font-size: 12px; color: var(--brand); cursor: pointer;
+  padding: 6px 0; user-select: none;
+  display: flex; align-items: center; gap: 4px;
+}
+.form-group-toggle:hover { color: var(--brand-light); }
+.form-group-toggle .toggle-icon { font-size: 10px; transition: transform .2s; }
+.form-group-toggle .toggle-icon.open { transform: rotate(90deg); }
+.form-group-body { padding: 4px 0 8px; display: flex; flex-direction: column; gap: 6px; }
+.use-case-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.use-case-chip {
+  font-size: 11px; padding: 3px 8px; border-radius: var(--radius-full);
+  background: var(--bg-input); border: 1px solid var(--border);
+  cursor: pointer; transition: all .15s;
+  display: flex; align-items: center; gap: 3px;
+  font-weight: 400; color: var(--text-secondary);
+}
+.use-case-chip:has(input:checked) {
+  background: var(--brand-bg); border-color: var(--brand-border); color: var(--brand); font-weight: 500;
+}
+.use-case-chip input { display: none; }
 
 .btn-sm {
   padding: 4px 10px; font-size: 12px;

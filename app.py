@@ -348,7 +348,15 @@ def add_platform_product(platform_id):
             shipping_fee=_safe_float(data.get('shipping_fee'), 0),
             is_in_stock=bool(data.get('is_in_stock', True)),
             color=data.get('color'),
-            memory=data.get('memory')
+            memory=data.get('memory'),
+            brand=data.get('brand'),
+            processor=data.get('processor'),
+            processor_brand=data.get('processor_brand'),
+            performance_tier=data.get('performance_tier'),
+            screen_size=_safe_float(data.get('screen_size')),
+            battery=_safe_int(data.get('battery')),
+            use_case_tags=data.get('use_case_tags'),
+            description=data.get('description'),
         )
         platform_db.close()
 
@@ -385,7 +393,15 @@ def update_platform_product(platform_id, product_id):
             shipping_fee=_safe_float(data.get('shipping_fee')),
             is_in_stock=None if data.get('is_in_stock') is None else bool(data['is_in_stock']),
             color=data.get('color'),
-            memory=data.get('memory')
+            memory=data.get('memory'),
+            brand=data.get('brand'),
+            processor=data.get('processor'),
+            processor_brand=data.get('processor_brand'),
+            performance_tier=data.get('performance_tier'),
+            screen_size=_safe_float(data.get('screen_size')),
+            battery=_safe_int(data.get('battery')),
+            use_case_tags=data.get('use_case_tags'),
+            description=data.get('description'),
         )
         platform_db.close()
 

@@ -123,35 +123,88 @@
                                     onclick="switchPlatform('suning')">苏宁</button></li>
                         </ul>
 
-                        <div class="mb-3">
-                            <button class="btn-sm w-100 mb-2" onclick="toggleAddProductCollapse()">
+                        <!-- 添加商品 — 折叠式分组表单 -->
+                        <div class="mb-2">
+                            <button class="btn-sm w-100" onclick="toggleAddProductCollapse()">
                                 <span id="addProductToggleIcon">▶</span> 添加新商品
                             </button>
                             <div id="addProductSection" style="display:none;">
-                                <form id="addProductForm">
-                                    <div class="mb-2"><input type="text" class="form-control form-control-sm"
-                                            id="productName" placeholder="商品名称" required></div>
-                                    <div class="mb-2"><input type="number" class="form-control form-control-sm"
-                                            id="productPrice" placeholder="参考价" required step="0.01"></div>
-                                    <div class="mb-2"><input type="number" class="form-control form-control-sm"
-                                            id="productPlatformPrice" placeholder="平台价（可选）" step="0.01"></div>
-                                    <div class="mb-2"><input type="number" class="form-control form-control-sm"
-                                            id="productStock" placeholder="库存" required></div>
-                                    <div class="mb-2"><input type="text" class="form-control form-control-sm"
-                                            id="productCategory" placeholder="品类" required></div>
-                                    <div class="mb-2"><input type="text" class="form-control form-control-sm"
-                                            id="productColor" placeholder="颜色（可选）"></div>
-                                    <div class="mb-2"><input type="text" class="form-control form-control-sm"
-                                            id="productMemory" placeholder="内存/容量（可选）"></div>
-                                    <div class="mb-2"><input type="number" class="form-control form-control-sm"
-                                            id="productShippingFee" placeholder="运费" step="0.01" value="0"></div>
-                                    <div class="form-check mb-2"><input type="checkbox" class="form-check-input"
-                                            id="productInStock" checked><label class="form-check-label">有货</label></div>
+                                <form id="addProductForm" class="add-product-form">
+                                    <!-- 基础信息（必填） -->
+                                    <div class="form-group-title">基础信息</div>
+                                    <div class="form-row-2">
+                                        <input type="text" class="form-control form-control-sm" id="productName" placeholder="商品名称" required>
+                                        <input type="text" class="form-control form-control-sm" id="productBrand" placeholder="品牌（Apple/小米/华为）">
+                                    </div>
+                                    <div class="form-row-2">
+                                        <input type="text" class="form-control form-control-sm" id="productCategory" placeholder="品类（手机/平板/耳机）" required>
+                                        <input type="number" class="form-control form-control-sm" id="productPrice" placeholder="参考价" required step="0.01">
+                                    </div>
+                                    <div class="form-row-2">
+                                        <input type="number" class="form-control form-control-sm" id="productPlatformPrice" placeholder="平台价（可选）" step="0.01">
+                                        <input type="number" class="form-control form-control-sm" id="productStock" placeholder="库存" required>
+                                    </div>
+
+                                    <!-- 规格参数（可选，默认折叠） -->
+                                    <div class="form-group-toggle" onclick="toggleFormGroup('addSpecs')">
+                                        <span class="toggle-icon" id="addSpecsIcon">▶</span> 规格参数（可选）
+                                    </div>
+                                    <div id="addSpecs" class="form-group-body" style="display:none;">
+                                        <div class="form-row-2">
+                                            <input type="text" class="form-control form-control-sm" id="productProcessor" placeholder="处理器（A17 Pro/骁龙8Gen3）">
+                                            <select class="form-control form-control-sm" id="productProcessorBrand">
+                                                <option value="">处理器厂商（不限）</option>
+                                                <option value="sd">骁龙 (sd)</option>
+                                                <option value="mt">天玑 (mt)</option>
+                                                <option value="apple">Apple (apple)</option>
+                                                <option value="kirin">麒麟 (kirin)</option>
+                                            </select>
+                                        </div>
+                                        <div class="form-row-2">
+                                            <select class="form-control form-control-sm" id="productPerformanceTier">
+                                                <option value="">性能层级（不限）</option>
+                                                <option value="flagship">旗舰 (flagship)</option>
+                                                <option value="mid">中端 (mid)</option>
+                                                <option value="budget">入门 (budget)</option>
+                                            </select>
+                                            <input type="text" class="form-control form-control-sm" id="productColor" placeholder="颜色">
+                                        </div>
+                                        <div class="form-row-2">
+                                            <input type="text" class="form-control form-control-sm" id="productMemory" placeholder="内存/容量（128GB/256GB）">
+                                            <input type="number" class="form-control form-control-sm" id="productScreenSize" placeholder="屏幕尺寸（寸）" step="0.1">
+                                        </div>
+                                        <div class="form-row-2">
+                                            <input type="number" class="form-control form-control-sm" id="productBattery" placeholder="电池容量（mAh）">
+                                            <input type="number" class="form-control form-control-sm" id="productShippingFee" placeholder="运费" step="0.01" value="0">
+                                        </div>
+                                    </div>
+
+                                    <!-- 标签与描述（可选，默认折叠） -->
+                                    <div class="form-group-toggle" onclick="toggleFormGroup('addTags')">
+                                        <span class="toggle-icon" id="addTagsIcon">▶</span> 标签与描述（可选）
+                                    </div>
+                                    <div id="addTags" class="form-group-body" style="display:none;">
+                                        <div class="use-case-tags">
+                                            <label class="use-case-chip"><input type="checkbox" class="add-use-case" value="gaming"> 🎮 游戏</label>
+                                            <label class="use-case-chip"><input type="checkbox" class="add-use-case" value="photography"> 📷 拍照</label>
+                                            <label class="use-case-chip"><input type="checkbox" class="add-use-case" value="battery"> 🔋 续航</label>
+                                            <label class="use-case-chip"><input type="checkbox" class="add-use-case" value="business"> 💼 商务</label>
+                                            <label class="use-case-chip"><input type="checkbox" class="add-use-case" value="student"> 🎓 学生</label>
+                                            <label class="use-case-chip"><input type="checkbox" class="add-use-case" value="budget"> 💰 入门</label>
+                                            <label class="use-case-chip"><input type="checkbox" class="add-use-case" value="flagship"> 👑 旗舰</label>
+                                        </div>
+                                        <input type="text" class="form-control form-control-sm mt-2" id="productDescription" placeholder="简短介绍">
+                                    </div>
+
+                                    <div class="form-check mb-2">
+                                        <input type="checkbox" class="form-check-input" id="productInStock" checked>
+                                        <label class="form-check-label small">有货</label>
+                                    </div>
                                     <button type="submit" class="btn-sm w-100" style="background:var(--brand);color:#FFF;border:none;">添加</button>
                                 </form>
                             </div>
                         </div>
-                        <hr>
+
                         <h6 id="productListTitle">京东 - 商品列表</h6>
                         <div class="mb-2"><input type="text" class="form-control form-control-sm" id="productSearch"
                                 placeholder="搜索商品..." oninput="searchProducts()"></div>
@@ -200,22 +253,77 @@
 
     <!-- 编辑商品模态框 -->
     <div class="modal fade" id="editProductModal" tabindex="-1">
-        <div class="modal-dialog">
+        <div class="modal-dialog modal-lg">
             <div class="modal-content">
                 <div class="modal-header"><h5 class="modal-title">编辑商品</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
                 <div class="modal-body">
-                    <form id="editProductForm">
+                    <form id="editProductForm" class="add-product-form">
                         <input type="hidden" id="editProductId"><input type="hidden" id="editProductPlatformId">
-                        <div class="mb-2"><label class="form-label small">商品名称</label><input type="text" class="form-control form-control-sm" id="editProductName" required></div>
-                        <div class="mb-2"><label class="form-label small">参考价</label><input type="number" class="form-control form-control-sm" id="editProductPrice" step="0.01" required></div>
-                        <div class="mb-2"><label class="form-label small">平台价</label><input type="number" class="form-control form-control-sm" id="editProductPlatformPrice" step="0.01"></div>
-                        <div class="mb-2"><label class="form-label small">库存</label><input type="number" class="form-control form-control-sm" id="editProductStock" required></div>
-                        <div class="mb-2"><label class="form-label small">品类</label><input type="text" class="form-control form-control-sm" id="editProductCategory" required></div>
-                        <div class="mb-2"><label class="form-label small">颜色</label><input type="text" class="form-control form-control-sm" id="editProductColor"></div>
-                        <div class="mb-2"><label class="form-label small">内存/容量</label><input type="text" class="form-control form-control-sm" id="editProductMemory"></div>
-                        <div class="mb-2"><label class="form-label small">运费</label><input type="number" class="form-control form-control-sm" id="editProductShippingFee" step="0.01" value="0"></div>
-                        <div class="form-check mb-2"><input type="checkbox" class="form-check-input" id="editProductInStock"><label class="form-check-label small">有货</label></div>
+                        <!-- 基础信息 -->
+                        <div class="form-group-title">基础信息</div>
+                        <div class="form-row-2">
+                            <input type="text" class="form-control form-control-sm" id="editProductName" placeholder="商品名称" required>
+                            <input type="text" class="form-control form-control-sm" id="editProductBrand" placeholder="品牌">
+                        </div>
+                        <div class="form-row-2">
+                            <input type="text" class="form-control form-control-sm" id="editProductCategory" placeholder="品类" required>
+                            <input type="number" class="form-control form-control-sm" id="editProductPrice" placeholder="参考价" step="0.01" required>
+                        </div>
+                        <div class="form-row-2">
+                            <input type="number" class="form-control form-control-sm" id="editProductPlatformPrice" placeholder="平台价" step="0.01">
+                            <input type="number" class="form-control form-control-sm" id="editProductStock" placeholder="库存" required>
+                        </div>
+                        <!-- 规格参数 -->
+                        <div class="form-group-toggle" onclick="toggleFormGroup('editSpecs')">
+                            <span class="toggle-icon" id="editSpecsIcon">▶</span> 规格参数
+                        </div>
+                        <div id="editSpecs" class="form-group-body" style="display:none;">
+                            <div class="form-row-2">
+                                <input type="text" class="form-control form-control-sm" id="editProductProcessor" placeholder="处理器">
+                                <select class="form-control form-control-sm" id="editProductProcessorBrand">
+                                    <option value="">处理器厂商</option>
+                                    <option value="sd">骁龙 (sd)</option>
+                                    <option value="mt">天玑 (mt)</option>
+                                    <option value="apple">Apple (apple)</option>
+                                    <option value="kirin">麒麟 (kirin)</option>
+                                </select>
+                            </div>
+                            <div class="form-row-2">
+                                <select class="form-control form-control-sm" id="editProductPerformanceTier">
+                                    <option value="">性能层级</option>
+                                    <option value="flagship">旗舰 (flagship)</option>
+                                    <option value="mid">中端 (mid)</option>
+                                    <option value="budget">入门 (budget)</option>
+                                </select>
+                                <input type="text" class="form-control form-control-sm" id="editProductColor" placeholder="颜色">
+                            </div>
+                            <div class="form-row-2">
+                                <input type="text" class="form-control form-control-sm" id="editProductMemory" placeholder="内存/容量">
+                                <input type="number" class="form-control form-control-sm" id="editProductScreenSize" placeholder="屏幕尺寸(寸)" step="0.1">
+                            </div>
+                            <div class="form-row-2">
+                                <input type="number" class="form-control form-control-sm" id="editProductBattery" placeholder="电池(mAh)">
+                                <input type="number" class="form-control form-control-sm" id="editProductShippingFee" placeholder="运费" step="0.01" value="0">
+                            </div>
+                            <div class="form-check mb-2"><input type="checkbox" class="form-check-input" id="editProductInStock"><label class="form-check-label small">有货</label></div>
+                        </div>
+                        <!-- 标签与描述 -->
+                        <div class="form-group-toggle" onclick="toggleFormGroup('editTags')">
+                            <span class="toggle-icon" id="editTagsIcon">▶</span> 标签与描述
+                        </div>
+                        <div id="editTags" class="form-group-body" style="display:none;">
+                            <div class="use-case-tags">
+                                <label class="use-case-chip"><input type="checkbox" class="edit-use-case" value="gaming"> 🎮 游戏</label>
+                                <label class="use-case-chip"><input type="checkbox" class="edit-use-case" value="photography"> 📷 拍照</label>
+                                <label class="use-case-chip"><input type="checkbox" class="edit-use-case" value="battery"> 🔋 续航</label>
+                                <label class="use-case-chip"><input type="checkbox" class="edit-use-case" value="business"> 💼 商务</label>
+                                <label class="use-case-chip"><input type="checkbox" class="edit-use-case" value="student"> 🎓 学生</label>
+                                <label class="use-case-chip"><input type="checkbox" class="edit-use-case" value="budget"> 💰 入门</label>
+                                <label class="use-case-chip"><input type="checkbox" class="edit-use-case" value="flagship"> 👑 旗舰</label>
+                            </div>
+                            <input type="text" class="form-control form-control-sm mt-2" id="editProductDescription" placeholder="简短介绍">
+                        </div>
                     </form>
                 </div>
                 <div class="modal-footer">

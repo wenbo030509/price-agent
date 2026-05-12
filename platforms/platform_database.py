@@ -577,6 +577,14 @@ class PlatformDatabase:
         is_in_stock: Optional[bool] = None,
         color: Optional[str] = None,
         memory: Optional[str] = None,
+        brand: Optional[str] = None,
+        processor: Optional[str] = None,
+        processor_brand: Optional[str] = None,
+        performance_tier: Optional[str] = None,
+        screen_size: Optional[float] = None,
+        battery: Optional[int] = None,
+        use_case_tags: Optional[str] = None,
+        description: Optional[str] = None,
     ) -> Optional[Dict]:
         cursor = self.get_cursor()
         cursor.execute("SELECT * FROM products WHERE id = ?", (product_id,))
@@ -594,16 +602,28 @@ class PlatformDatabase:
             "is_in_stock": is_in_stock if is_in_stock is not None else existing[7],
             "color": color if color is not None else existing[8],
             "memory": memory if memory is not None else existing[9],
+            "brand": brand if brand is not None else existing[10],
+            "processor": processor if processor is not None else existing[11],
+            "processor_brand": processor_brand if processor_brand is not None else existing[12],
+            "performance_tier": performance_tier if performance_tier is not None else existing[13],
+            "screen_size": screen_size if screen_size is not None else existing[14],
+            "battery": battery if battery is not None else existing[15],
+            "use_case_tags": use_case_tags if use_case_tags is not None else existing[16],
+            "description": description if description is not None else existing[17],
         }
 
         cursor.execute(
             """UPDATE products
                SET product_name=?, price=?, stock=?, category=?,
-                   platform_price=?, shipping_fee=?, is_in_stock=?, color=?, memory=?
+                   platform_price=?, shipping_fee=?, is_in_stock=?, color=?, memory=?,
+                   brand=?, processor=?, processor_brand=?, performance_tier=?,
+                   screen_size=?, battery=?, use_case_tags=?, description=?
                WHERE id=?""",
             (fields["product_name"], fields["price"], fields["stock"], fields["category"],
              fields["platform_price"], fields["shipping_fee"], fields["is_in_stock"],
-             fields["color"], fields["memory"], product_id),
+             fields["color"], fields["memory"], fields["brand"], fields["processor"],
+             fields["processor_brand"], fields["performance_tier"], fields["screen_size"],
+             fields["battery"], fields["use_case_tags"], fields["description"], product_id),
         )
         self.commit()
         return {
@@ -639,16 +659,27 @@ class PlatformDatabase:
         is_in_stock: bool = True,
         color: Optional[str] = None,
         memory: Optional[str] = None,
+        brand: Optional[str] = None,
+        processor: Optional[str] = None,
+        processor_brand: Optional[str] = None,
+        performance_tier: Optional[str] = None,
+        screen_size: Optional[float] = None,
+        battery: Optional[int] = None,
+        use_case_tags: Optional[str] = None,
+        description: Optional[str] = None,
     ) -> Dict:
-        """添加商品到平台数据库"""
+        """添加商品到平台数据库（17 列 IT3C Schema）"""
         cursor = self.get_cursor()
         cursor.execute(
             """INSERT INTO products
                (product_name, price, stock, category, platform_price, shipping_fee,
-                is_in_stock, color, memory)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                is_in_stock, color, memory, brand, processor, processor_brand,
+                performance_tier, screen_size, battery, use_case_tags, description)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (product_name, price, stock, category, platform_price or price,
-             shipping_fee, is_in_stock, color, memory),
+             shipping_fee, is_in_stock, color, memory, brand, processor,
+             processor_brand, performance_tier, screen_size, battery,
+             use_case_tags, description),
         )
         self.commit()
         product_id = cursor.lastrowid
@@ -665,4 +696,12 @@ class PlatformDatabase:
             "is_in_stock": is_in_stock,
             "color": color,
             "memory": memory,
+            "brand": brand,
+            "processor": processor,
+            "processor_brand": processor_brand,
+            "performance_tier": performance_tier,
+            "screen_size": screen_size,
+            "battery": battery,
+            "use_case_tags": use_case_tags,
+            "description": description,
         }

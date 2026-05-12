@@ -461,6 +461,32 @@ function toggleAddProductCollapse() {
 function handleKeyPress(event) { if (event.key === 'Enter') sendMessage(); }
 function escapeHtml(text) { const div = document.createElement('div'); div.textContent = text; return div.innerHTML; }
 
+function toggleFormGroup(id) {
+    const body = document.getElementById(id);
+    const icon = document.getElementById(id + 'Icon');
+    if (!body || !icon) return;
+    const show = body.style.display === 'none';
+    body.style.display = show ? 'block' : 'none';
+    icon.classList.toggle('open', show);
+}
+
+function toggleProductCard(cardId) {
+    const expand = document.getElementById(cardId);
+    if (expand) expand.classList.toggle('show');
+}
+
+function getUseCaseTags(selector) {
+    return Array.from(document.querySelectorAll(selector + ':checked'))
+        .map(cb => cb.value).filter(Boolean);
+}
+
+function setUseCaseTags(selector, tags) {
+    const tagList = typeof tags === 'string' ? JSON.parse(tags || '[]') : (tags || []);
+    document.querySelectorAll(selector).forEach(cb => {
+        cb.checked = tagList.includes(cb.value);
+    });
+}
+
 async function switchPlatform(platformId) {
     currentPlatform = platformId;
     document.getElementById('productListTitle').textContent = platformNames[platformId] + ' - 商品列表';
@@ -498,41 +524,67 @@ function renderPlatformProducts(products, platformId) {
     if (!products || products.length === 0) {
         container.innerHTML = '<p class="text-muted small text-center">暂无商品</p>'; return;
     }
-    container.innerHTML = products.map(p => `
+    container.innerHTML = products.map((p, i) => {
+        const cardId = 'card-' + platformId + '-' + i;
+        const brand = p.brand || '';
+        const tier = p.performance_tier || '';
+        const tierLabel = tier === 'flagship' ? '旗舰' : tier === 'mid' ? '中端' : tier === 'budget' ? '入门' : '';
+        const specs = [];
+        if (p.processor) specs.push(p.processor);
+        if (p.screen_size) specs.push(p.screen_size + '″');
+        if (p.battery) specs.push(p.battery + 'mAh');
+        const tags = (() => { try { return JSON.parse(p.use_case_tags || '[]'); } catch { return []; } })();
+        return `
         <div class="product-item">
-            <div class="d-flex justify-content-between align-items-start">
-                <div>
-                    <div class="product-name">${escapeHtml(p.product_name)}</div>
-                    <div class="product-info">
-                        参考价: <span class="price">¥${p.price}</span> |
-                        平台价: <span class="price">¥${p.platform_price}</span> |
-                        运费: ¥${p.shipping_fee} | 库存: ${p.stock} | ${escapeHtml(p.category)}
-                        ${p.color ? ' | ' + escapeHtml(p.color) : ''}
-                        ${p.memory ? ' | ' + escapeHtml(p.memory) : ''}
-                        ${!p.is_in_stock ? ' <span style="color:var(--error)">(缺货)</span>' : ''}
+            <div class="product-card-main" onclick="toggleProductCard('${cardId}')">
+                <div class="product-card-left">
+                    <div class="product-card-title">
+                        ${brand ? '<span class="brand-tag">' + escapeHtml(brand) + '</span>' : ''}${escapeHtml(p.product_name)}
                     </div>
+                    <div class="product-card-meta">
+                        <span class="price">¥${p.platform_price || p.price}</span>
+                        ${tier ? '<span class="tier tier-' + tier + '">' + tierLabel + '</span>' : ''}
+                        <span>${escapeHtml(p.category)}</span>
+                        <span>库存${p.stock}</span>
+                        ${!p.is_in_stock ? '<span style="color:var(--error)">缺货</span>' : ''}
+                    </div>
+                    ${specs.length ? '<div class="product-card-specs">' + specs.map(s => escapeHtml(s)).join(' · ') + '</div>' : ''}
                 </div>
-                <div>
+                <div class="product-card-actions" onclick="event.stopPropagation()">
                     <button class="btn-sm" onclick="editProduct(${p.id},'${platformId}')">编辑</button>
                     <button class="btn-sm btn-danger" onclick="deleteProduct(${p.id},'${platformId}')">删除</button>
                 </div>
             </div>
+            <div id="${cardId}" class="product-card-expand">
+                ${tags.length ? '<div class="tags-row">' + tags.map(t => '<span class="tag-chip">' + escapeHtml(t) + '</span>').join('') + '</div>' : ''}
+                <div>颜色: ${p.color || '-'} | 内存: ${p.memory || '-'} | 运费: ¥${p.shipping_fee || 0}</div>
+                ${p.description ? '<div style="margin-top:4px;color:var(--text-secondary);font-style:italic;">' + escapeHtml(p.description) + '</div>' : ''}
+            </div>
         </div>
-    `).join('');
+        `;
+    }).join('');
 }
 
 async function handleAddProduct(event) {
     event.preventDefault();
     const data = {
         product_name: document.getElementById('productName').value.trim(),
+        brand: document.getElementById('productBrand').value.trim() || null,
         price: document.getElementById('productPrice').value,
         platform_price: document.getElementById('productPlatformPrice').value || null,
         stock: document.getElementById('productStock').value,
         category: document.getElementById('productCategory').value.trim(),
+        processor: document.getElementById('productProcessor').value.trim() || null,
+        processor_brand: document.getElementById('productProcessorBrand').value || null,
+        performance_tier: document.getElementById('productPerformanceTier').value || null,
         color: document.getElementById('productColor').value.trim() || null,
         memory: document.getElementById('productMemory').value.trim() || null,
+        screen_size: document.getElementById('productScreenSize').value || null,
+        battery: document.getElementById('productBattery').value || null,
         shipping_fee: document.getElementById('productShippingFee').value || 0,
         is_in_stock: document.getElementById('productInStock').checked,
+        use_case_tags: JSON.stringify(getUseCaseTags('.add-use-case')),
+        description: document.getElementById('productDescription').value.trim() || null,
     };
     if (!data.product_name || !data.price || !data.stock || !data.category) { alert('请填写完整信息'); return; }
     try {
@@ -555,15 +607,26 @@ async function editProduct(productId, platformId) {
         if (!p) { alert('商品不存在'); return; }
         document.getElementById('editProductId').value = productId;
         document.getElementById('editProductPlatformId').value = platformId;
+        // 基础信息
         document.getElementById('editProductName').value = p.product_name;
+        document.getElementById('editProductBrand').value = p.brand || '';
+        document.getElementById('editProductCategory').value = p.category;
         document.getElementById('editProductPrice').value = p.price;
         document.getElementById('editProductPlatformPrice').value = p.platform_price || '';
         document.getElementById('editProductStock').value = p.stock;
-        document.getElementById('editProductCategory').value = p.category;
+        // 规格参数
+        document.getElementById('editProductProcessor').value = p.processor || '';
+        document.getElementById('editProductProcessorBrand').value = p.processor_brand || '';
+        document.getElementById('editProductPerformanceTier').value = p.performance_tier || '';
         document.getElementById('editProductColor').value = p.color || '';
         document.getElementById('editProductMemory').value = p.memory || '';
+        document.getElementById('editProductScreenSize').value = p.screen_size || '';
+        document.getElementById('editProductBattery').value = p.battery || '';
         document.getElementById('editProductShippingFee').value = p.shipping_fee || 0;
         document.getElementById('editProductInStock').checked = p.is_in_stock;
+        // 标签与描述
+        setUseCaseTags('.edit-use-case', p.use_case_tags || '[]');
+        document.getElementById('editProductDescription').value = p.description || '';
         if (!editProductModal) editProductModal = new bootstrap.Modal(document.getElementById('editProductModal'));
         editProductModal.show();
     } catch (e) { console.error(e); }
@@ -574,14 +637,22 @@ async function saveEditProduct() {
     const platformId = document.getElementById('editProductPlatformId').value;
     const data = {
         product_name: document.getElementById('editProductName').value.trim(),
+        brand: document.getElementById('editProductBrand').value.trim() || null,
         price: document.getElementById('editProductPrice').value || null,
         platform_price: document.getElementById('editProductPlatformPrice').value || null,
         stock: document.getElementById('editProductStock').value || null,
         category: document.getElementById('editProductCategory').value.trim() || null,
+        processor: document.getElementById('editProductProcessor').value.trim() || null,
+        processor_brand: document.getElementById('editProductProcessorBrand').value || null,
+        performance_tier: document.getElementById('editProductPerformanceTier').value || null,
         color: document.getElementById('editProductColor').value.trim() || null,
         memory: document.getElementById('editProductMemory').value.trim() || null,
+        screen_size: document.getElementById('editProductScreenSize').value || null,
+        battery: document.getElementById('editProductBattery').value || null,
         shipping_fee: document.getElementById('editProductShippingFee').value || null,
         is_in_stock: document.getElementById('editProductInStock').checked,
+        use_case_tags: JSON.stringify(getUseCaseTags('.edit-use-case')),
+        description: document.getElementById('editProductDescription').value.trim() || null,
     };
     try {
         const resp = await fetch(`/api/platforms/${platformId}/products/${id}`, {
