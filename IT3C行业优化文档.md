@@ -1134,6 +1134,27 @@ add_message(db, session_id, 'assistant', answer, summary=summary)
 
 **解决方案**：`tools/multi_platform_tools.py` 中 `_parse_attrs_from_query` 的 `max_tokens` 从 200 → 500，为 thinking tokens 留出足够空间。
 
+#### 【Fix-8 · 中等】混合意图路由——同时含推荐 + 对比的复杂 query 处理
+
+**发现过程**：用户提问"如果复杂 query 包含了 recommendation 和 comparison 你怎么处理"，验证发现 "推荐游戏手机，然后和 iPhone 15 对比" 这类 query 被误判为 `query`（因 model_count=1 直接短路）。进一步测试暴露了 3 个路由冲突：`"便宜"` 触发 budget 标签导致查价句式的误判、`"推荐"` 在 complexity_keywords 中导致单商品查价被判为 comparison、以及无型号对比词（如"和苹果比较"）未被正确处理。
+
+**解决方案**：
+1. 新增 `has_price_lookup` 检测——含"最便宜""多少钱""哪个平台"的 query 不算推荐触发
+2. 从 complexity_keywords 中移除"推荐"/"建议"（意图分类已接管）
+3. "推荐"+单型号+无场景/预算/处理器限定 → query（仅查价）
+4. 推荐触发 + `is_complex`（含对比词/多步骤） → comparison（Plan-Execute 混合意图）
+5. 推荐触发 + 无对比证据 → recommendation
+
+**最终路由矩阵**：
+
+| 触发条件 | model_count | is_complex | 结果 | 示例 |
+|---------|:----------:|:----------:|------|------|
+| 推荐触发 | 0 | — | recommendation | "骁龙8Gen3手机有哪些" |
+| 推荐触发 | ≥1 | True | comparison | "推荐游戏手机，再和iPhone 15对比" |
+| 仅推荐词 | ≥1 | False | query | "推荐iPhone 15" |
+| 无触发 | 1 | — | query | "iPhone 15 价格" |
+| 无触发 | ≥2 | — | comparison | "iPhone 15 和小米14 哪个好" |
+
 #### 【Fix-7 · 轻度】DeepSeek 模型对长 prompt 的 few-shot 示例依赖强
 
 **发现过程**：P1 评估中，"学生用手机便宜实惠天玑处理器" 这类 query，DeepSeek 提取 `use_case=student` 的成功率不如豆包稳定。分析发现 DeepSeek V4 Flash 对隐式语义推断（如"大学生用的"→student）不如豆包模型积极。
