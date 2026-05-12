@@ -59,5 +59,8 @@ temp/
 
 static/uploads/
 
+# 内部复盘文档（不对外）
+IT3C问题复盘-产品视角.md
+
 # 评估报告（自动生成，不入库）
 tests/eval_results/
