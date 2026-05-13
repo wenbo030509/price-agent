@@ -1,6 +1,11 @@
 from .platform_config import get_platform_config, get_all_platforms, get_platform_ids, PLATFORMS
 from .platform_database import PlatformDatabase, init_all_platforms
-from .parallel_agent import PlatformParallelAgent, format_comparison_result
+from .parallel_agent import (
+    PlatformParallelAgent,
+    format_comparison_result,
+    init_product_embeddings,
+    get_cached_embedding,
+)
 
 __all__ = [
     "PLATFORMS",
@@ -10,5 +15,7 @@ __all__ = [
     "PlatformDatabase",
     "init_all_platforms",
     "PlatformParallelAgent",
-    "format_comparison_result"
+    "format_comparison_result",
+    "init_product_embeddings",
+    "get_cached_embedding",
 ]

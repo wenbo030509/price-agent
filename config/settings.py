@@ -9,11 +9,12 @@ class Settings:
     def __init__(self):
         load_dotenv()
         self._load_api_config()
+        self._load_embedding_config()
         self._load_agent_config()
 
     def _load_api_config(self):
-        """加载API配置"""
-        # DeepSeek API（OpenAI 兼容）
+        """加载 API 配置"""
+        # DeepSeek API（OpenAI 兼容）— 文本模型
         self.api_key = os.getenv("DEEPSEEK_API_KEY")
         if not self.api_key:
             raise ValueError(
@@ -22,7 +23,6 @@ class Settings:
         self.base_url = "https://api.deepseek.com"
 
         # ── 多模型路由配置 ──
-        # 文本模型统一使用 DeepSeek
         self.model = os.getenv(
             "DEEPSEEK_MODEL", "deepseek-v4-flash"
         )  # 默认/兜底模型（ReAct 循环）
@@ -36,19 +36,49 @@ class Settings:
             "DEEPSEEK_MODEL_PARSE", "deepseek-v4-flash"
         )  # 属性解析（简单提取）
 
-        # 视觉模型暂不更换，仍使用豆包
+        # 视觉模型 — 火山引擎 ARK
         self.model_vision = os.getenv(
             "ARK_VISION_MODEL", "doubao-seed-2-0-pro-260215"
-        )  # 图片识别（多模态模型）
+        )
 
-        # 文本模型共享 DeepSeek client
+        # 文本模型 client（DeepSeek）
         self.client = OpenAI(
             api_key=self.api_key,
             base_url=self.base_url
         )
 
+    def _load_embedding_config(self):
+        """加载 Embedding 配置 — 火山引擎 ARK 多模态 Embedding"""
+        # ARK API Key — 与视觉模型共用同一个 key
+        self.ark_api_key = os.getenv("ARK_API_KEY", "")
+        self.embedding_model = os.getenv(
+            "ARK_EMBEDDING_MODEL", "doubao-embedding-vision-251215"
+        )
+        self.embedding_base_url = os.getenv(
+            "ARK_EMBEDDING_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3"
+        )
+
+        # 延迟初始化 embedding_client（避免 import 时无 ark_api_key 就报错）
+        self._embedding_client = None
+
+    @property
+    def embedding_client(self):
+        """懒加载 embedding client"""
+        if self._embedding_client is None:
+            if not self.ark_api_key:
+                raise ValueError(
+                    "ARK_API_KEY 未设置。请在 .env 文件中配置 ARK_API_KEY=your_key"
+                )
+            from .embedding import EmbeddingClient
+            self._embedding_client = EmbeddingClient(
+                api_key=self.ark_api_key,
+                model=self.embedding_model,
+                base_url=self.embedding_base_url,
+            )
+        return self._embedding_client
+
     def _load_agent_config(self):
-        """加载Agent配置"""
+        """加载 Agent 配置"""
         self.max_round = 5
 
         # Plan-Execute 配置
@@ -79,7 +109,30 @@ class Settings:
         # 自反思重试配置
         self.max_reflection_retries = 2
         self.auto_relax_attributes = True
-        self.max_step_react_rounds = 2  # Plan-Execute 每 Step 的 mini-ReAct 最大轮数
+        self.max_step_react_rounds = 2
+
+        # ── 行业配置 ──
+        self.industry = os.getenv("INDUSTRY", "mobile")
+        self._load_industry_config()
+
+    def _load_industry_config(self):
+        """加载行业 Config — 从 config/industries/<industry>.py 动态加载"""
+        try:
+            from .industry_loader import load_industry_config
+            self.industry_config = load_industry_config(self.industry)
+        except Exception:
+            self.industry_config = {}
+
+    def reload_industry_config(self, industry: str = None):
+        """重新加载行业 Config（热切换行业用）"""
+        if industry:
+            self.industry = industry
+        try:
+            from .industry_loader import load_industry_config, clear_cache
+            clear_cache(self.industry)
+            self.industry_config = load_industry_config(self.industry)
+        except Exception:
+            pass
 
 
 # 全局配置实例

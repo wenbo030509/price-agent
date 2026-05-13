@@ -59,8 +59,19 @@ temp/
 
 static/uploads/
 
-# 项目文档（不对外，仅 README.md 入库）
-docs/
+# 项目文档
+docs/IT3C问题复盘-产品视角.md   # 产品复盘，内部参考
+docs/IT3C行业优化文档.md       # 内部提示词，不入库
+docs/plan-execute-方案.md
+docs/MULTI_PLATFORM_README.md
+docs/测试用例手册.md
+docs/评估文档.md
+docs/需求文档.md
+docs/优化文档.md
+# 规划文档和模块文档 → 入库（docs/下一代*.md、docs/modules/）
+
+# Claude Code 工作目录
+.claude/
 
 # 评估报告（自动生成，不入库）
 tests/eval_results/

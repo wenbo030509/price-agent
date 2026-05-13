@@ -310,6 +310,58 @@ class PlatformParallelAgent:
         self.close()
 
 
+# ── Embedding 预热（M2）─────────────────────────────────────────────────
+
+# 商品名 → embedding 向量缓存
+_product_embedding_cache: Dict[str, any] = {}
+
+
+def init_product_embeddings(industry_config: dict, embedding_client):
+    """
+    对所有平台的商品预计算 embedding 并缓存。
+    调用时机：init_all_platforms() 之后调用一次。
+
+    Args:
+        industry_config: 行业 Config（需含 embedding_fields）
+        embedding_client: config.embedding.EmbeddingClient 实例
+    """
+    embedding_fields = industry_config.get("embedding_fields", [])
+    if not embedding_fields:
+        return
+
+    from tools.semantic_search_tool import build_product_text
+
+    agent = PlatformParallelAgent()
+    result = agent.query_all_products_parallel()
+
+    all_products = []
+    for platform_id, data in result.get("results", {}).items():
+        platform_name = data.get("platform_name", platform_id)
+        for p in data.get("products", []):
+            p["_platform_name"] = platform_name
+            all_products.append(p)
+
+    if not all_products:
+        return
+
+    texts = [build_product_text(p, embedding_fields) for p in all_products]
+    embeddings = embedding_client.embed_texts(texts)
+
+    import numpy as np
+    global _product_embedding_cache
+    for product, emb in zip(all_products, embeddings):
+        name = product.get("product_name", "")
+        if name:
+            _product_embedding_cache[name] = np.array(emb, dtype=np.float32)
+
+
+def get_cached_embedding(product_name: str):
+    """获取预热的 embedding 向量，未命中返回 None"""
+    return _product_embedding_cache.get(product_name)
+
+
+# ── 比价结果格式化 ─────────────────────────────────────────────────────
+
 def format_comparison_result(comparison: Dict) -> str:
     """格式化比价结果为易读文本"""
     if not comparison["found"]:

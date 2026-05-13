@@ -1,6 +1,7 @@
 import json
 import re
 import concurrent.futures
+from dataclasses import dataclass, field
 from typing import Dict, List, Callable, Optional
 from openai import OpenAI
 from .prompts import SYSTEM_PROMPT, PLAN_PROMPT_TEMPLATE
@@ -37,6 +38,33 @@ _PROCESSOR_TRIGGERS = [
 ]
 
 
+# ── M5: ShoppingContext 状态机 ──────────────────────────────────────────
+
+@dataclass
+class ShoppingContext:
+    """购物上下文 — 跨多轮持久化"""
+    phase: str = "greeting"          # greeting | slot_filling | searching | recommending | comparing | follow_up
+    slots: Dict = field(default_factory=dict)
+    candidates: List = field(default_factory=list)
+    compare_basket: List = field(default_factory=list)
+    question_count: int = 0
+    last_recommendation: Optional[Dict] = None
+
+    def reset(self):
+        self.phase = "greeting"
+        self.slots.clear()
+        self.candidates.clear()
+        self.compare_basket.clear()
+        self.question_count = 0
+        self.last_recommendation = None
+
+    def add_slot(self, key: str, value):
+        self.slots[key] = value
+
+    def get_missing_required(self, slot_defs: list) -> list:
+        return [s for s in slot_defs if s.get("required") and s["name"] not in self.slots]
+
+
 class ReActAgent:
     """ReAct 推理引擎，支持 Plan-Execute 策略、滑动窗口上下文、自反思纠错"""
 
@@ -66,7 +94,6 @@ class ReActAgent:
         self.max_plan_steps = cfg.get("max_plan_steps", 8)
         self.max_history_rounds = cfg.get("max_history_rounds", 6)
         self.max_history_chars = cfg.get("max_history_chars", 6000)
-        # "推荐"/"建议" 已由 _detect_intent 接管，不在 complexity 中重复触发
         self.complexity_keywords = cfg.get("complexity_keywords", [
             "对比", "比较", "vs", "和", "与", "以及", "还有",
             "分析", "哪个更", "怎么选", "哪个好",
@@ -80,6 +107,12 @@ class ReActAgent:
         self.max_reflection_retries = cfg.get("max_reflection_retries", 2)
         self.auto_relax_attributes = cfg.get("auto_relax_attributes", True)
         self.max_step_react_rounds = cfg.get("max_step_react_rounds", 2)
+
+        # M1: 行业配置
+        self.industry_config = cfg.get("industry_config", {})
+
+        # M5: 购物上下文
+        self.shopping_context = ShoppingContext()
 
     # ── 入口 ──────────────────────────────────────────────────────────
 
@@ -98,6 +131,11 @@ class ReActAgent:
         if history:
             history = self._slide_window(history)
 
+        # M5: 检测购物中途退出
+        if self.shopping_context.phase != "greeting" and intent != "shopping":
+            if self._is_ending_shopping(user_query):
+                self.shopping_context.reset()
+
         intent = self._detect_intent(user_query)
 
         if intent == "recommendation":
@@ -109,6 +147,11 @@ class ReActAgent:
             if verbose:
                 print(f"\n[Intent: comparison] 启用 Plan-Execute 对比模式")
             return self._plan_and_execute(user_query, history, verbose)
+
+        elif intent == "shopping":                                    # M5: 新增
+            if verbose:
+                print(f"\n[Intent: shopping] 启用引导式购物模式")
+            return self._guided_shopping(user_query, history, verbose)
 
         else:  # query
             return self._react_loop(user_query, history, verbose)
@@ -165,7 +208,7 @@ class ReActAgent:
         # 推荐意图检测
         has_use_case = any(kw in query for kw in USE_CASE_TRIGGER_MAP)
         has_recommend_word = any(w in query for w in ["推荐", "建议", "适合", "哪款好", "什么手机", "选什么"])
-        has_budget = any(w in query for w in ["以内", "以下", "不超过", "预算", "多少钱以内"])
+        has_budget = any(w in query for w in ["以内", "以下", "不超过", "预算", "多少钱以内", "左右"])
         has_processor = any(kw in query for kw in _PROCESSOR_TRIGGERS)
 
         # "最便宜"/"哪里便宜" 等是查价意图，不算推荐触发
@@ -198,6 +241,17 @@ class ReActAgent:
         # 对比意图：多个商品 或 含对比词
         if is_complex:
             return "comparison"
+
+        # ── M5: shopping 意图检测 ──
+        # 条件：有购物意图 + 无明确型号 + 无场景/预算触发词（有则走 recommendation）
+        shopping_keywords = ["买", "想买", "想换", "换个", "挑", "选"]
+        has_shopping = any(w in query for w in shopping_keywords)
+        if has_shopping and model_count == 0:
+            has_scene = any(kw in query for kw in USE_CASE_TRIGGER_MAP)
+            budget_words = ["以内", "以下", "预算", "左右", "不超过"]
+            has_budget_word = any(w in query for w in budget_words)
+            if not has_scene and not has_budget_word:
+                return "shopping"
 
         return "query"
 
@@ -825,3 +879,288 @@ class ReActAgent:
             total_chars = sum(len(m.get("content", "")) for m in clean)
 
         return clean
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # M5: 引导式购物
+    # ═══════════════════════════════════════════════════════════════════════
+
+    def _is_ending_shopping(self, query: str) -> bool:
+        """检测用户是否在结束购物"""
+        end_words = ["谢谢", "好的", "就这个", "下单", "买了", "不用了", "算了"]
+        return any(w in query for w in end_words)
+
+    def _guided_shopping(
+        self,
+        user_query: str,
+        history: Optional[List[Dict]],
+        verbose: bool,
+    ) -> str:
+        """引导式购物主流程"""
+        slots_cfg = self.industry_config.get("shopping_slots", [])
+        max_questions = self.industry_config.get("max_slot_questions", 3)
+        ctx = self.shopping_context
+
+        # Phase: GREETING
+        if ctx.phase == "greeting":
+            ctx.phase = "slot_filling"
+            self._inject_from_history(history, slots_cfg)
+            self._extract_slots_from_query(user_query, slots_cfg)
+
+            missing = ctx.get_missing_required(slots_cfg)
+            if not missing:
+                ctx.phase = "searching"
+            else:
+                return self._greet_and_ask(missing, slots_cfg)
+
+        # Phase: SLOT_FILLING
+        if ctx.phase == "slot_filling":
+            self._extract_slots_from_query(user_query, slots_cfg)
+            ctx.question_count += 1
+            missing = ctx.get_missing_required(slots_cfg)
+
+            if not missing:
+                ctx.phase = "searching"
+            elif ctx.question_count >= max_questions:
+                ctx.phase = "searching"
+            else:
+                optional = [s for s in slots_cfg if not s.get("required") and s["name"] not in ctx.slots]
+                if optional:
+                    return self._ask_slot_question(optional[0])
+                ctx.phase = "searching"
+
+        # Phase: SEARCHING
+        if ctx.phase == "searching":
+            result = self._search_with_slots(ctx.slots)
+            ctx.candidates = result.get("recommendations", [])
+            ctx.last_recommendation = result
+            ctx.phase = "recommending"
+            return self._format_recommendation(result)
+
+        # Phase: RECOMMENDING / COMPARING / FOLLOW_UP
+        if ctx.phase in ("recommending", "comparing", "follow_up"):
+            return self._handle_followup(user_query)
+
+        # 兜底
+        return self._react_loop(user_query, history, verbose)
+
+    def _inject_from_history(self, history, slots_cfg):
+        """从历史对话提取上下文注入槽位"""
+        if not history:
+            return
+        recent = " ".join(
+            h.get("content", "") for h in history[-6:]
+            if isinstance(h, dict) and h.get("role") == "user"
+        )
+        if recent:
+            self._extract_slots_from_query(recent, slots_cfg)
+
+    def _extract_slots_from_query(self, query: str, slots_cfg: list):
+        """从用户输入中提取槽位信息"""
+        ctx = self.shopping_context
+        for slot_def in slots_cfg:
+            name = slot_def["name"]
+            if name in ctx.slots:
+                continue
+
+            # 策略 1: 关键词匹配（dict 做值映射，list 做存在检测）
+            keywords = slot_def.get("extract_keywords")
+            if isinstance(keywords, dict):
+                for kw, mapped in keywords.items():
+                    if kw in query:
+                        ctx.add_slot(name, mapped)
+                        break
+            elif isinstance(keywords, list):
+                for kw in keywords:
+                    if kw in query:
+                        ctx.add_slot(name, kw)
+                        break
+
+            # 策略 2: 正则提取
+            pattern = slot_def.get("extract_pattern")
+            if pattern and name not in ctx.slots:
+                m = re.search(pattern, query)
+                if m:
+                    # group(0) 是整个匹配，从中提取第一个数字
+                    nums = re.findall(r'\d+', m.group(0))
+                    if nums:
+                        ctx.add_slot(name, int(nums[0]))
+
+        # budget_range → budget_max 映射
+        if "budget_range" in ctx.slots and "budget_max" not in ctx.slots:
+            ctx.add_slot("budget_max", ctx.slots.pop("budget_range"))
+
+    def _greet_and_ask(self, missing: list, slots_cfg: list) -> str:
+        """打招呼 + 追问第一个必填槽位"""
+        first = missing[0]
+        question = first.get("question", "")
+        options = first.get("options", [])
+        lines = ["您好！让我帮您挑选合适的手机。", ""]
+        if question:
+            lines.append(question)
+        if options:
+            lines.append("可选：" + " / ".join(options))
+        return "\n".join(lines)
+
+    def _ask_slot_question(self, slot_def: dict) -> str:
+        """追问单个槽位"""
+        q = slot_def.get("question", "")
+        opts = slot_def.get("options", [])
+        if opts:
+            q += " 可选：" + " / ".join(opts)
+        return q
+
+    def _search_with_slots(self, slots: dict) -> dict:
+        """将槽位转换为 semantic_product_search 参数并调用"""
+        from tools.semantic_search_tool import semantic_product_search
+
+        params = {"category": self.industry_config.get("category", "手机")}
+        if "primary_use_case" in slots:
+            params["use_case"] = slots["primary_use_case"]
+        if "budget_max" in slots:
+            params["budget_max"] = slots["budget_max"]
+        if "brand_preference" in slots:
+            params["brand"] = slots["brand_preference"]
+        if "processor_preference" in slots:
+            proc_map = self.industry_config.get("processor_normalize", {})
+            pref = slots["processor_preference"]
+            params["processor_brand"] = proc_map.get(pref, pref)
+
+        return semantic_product_search(**params)
+
+    def _search_and_respond(self) -> str:
+        """执行搜索并格式化推荐返回"""
+        ctx = self.shopping_context
+        result = self._search_with_slots(ctx.slots)
+        ctx.candidates = result.get("recommendations", [])
+        ctx.last_recommendation = result
+        return self._format_recommendation(result)
+
+    def _format_recommendation(self, result: dict) -> str:
+        """将推荐结果格式化为用户可读文本"""
+        recs = result.get("recommendations", [])
+        if not recs:
+            return "抱歉，没有找到符合条件的商品。要不要调整一下条件试试？"
+
+        lines = ["为您找到以下商品：", ""]
+        for r in recs[:5]:
+            lines.append(
+                f"{r['rank']}. {r['product_name']} — "
+                f"¥{r['price']} | {r.get('platform', '')} | "
+                f"{r.get('processor', '')}"
+            )
+            desc = r.get("description", "")
+            if desc:
+                lines.append(f"   {desc}")
+            lines.append("")
+
+        total = result.get("total_found", len(recs))
+        lines.append(
+            f"共找到 {total} 款商品。您可以继续筛选，比如'便宜点的'、"
+            f"'对比前两个'、'再加预算'。"
+        )
+        return "\n".join(lines)
+
+    def _handle_followup(self, user_query: str) -> str:
+        """处理推荐后的用户跟进"""
+        ctx = self.shopping_context
+
+        # 对比意图
+        if any(w in user_query for w in ["对比", "比较", "哪个好", "哪个更", "这两个"]):
+            ctx.phase = "comparing"
+            return self._handle_comparison(user_query)
+
+        # 预算调整
+        new_budget = self._detect_budget_adjust(user_query)
+        if new_budget:
+            ctx.slots["budget_max"] = new_budget
+            ctx.phase = "searching"
+            return self._search_and_respond()
+
+        # 价格敏感
+        if any(w in user_query for w in ["便宜", "更便宜", "贵了", "超预算"]):
+            ctx.phase = "searching"
+            return self._search_and_respond()
+
+        # 结束
+        if self._is_ending_shopping(user_query):
+            ctx.reset()
+            return "好的！如果还有其他需要，随时告诉我。"
+
+        # 默认：追加条件重新搜
+        self._extract_slots_from_query(
+            user_query, self.industry_config.get("shopping_slots", [])
+        )
+        ctx.phase = "searching"
+        return self._search_and_respond()
+
+    def _handle_comparison(self, user_query: str) -> str:
+        """对比模式"""
+        ctx = self.shopping_context
+        dimensions = self.industry_config.get("compare_dimensions", [])
+
+        if not ctx.compare_basket:
+            ctx.compare_basket = ctx.candidates[:3]
+
+        if not ctx.compare_basket:
+            return "目前还没有可以对比的商品，先让我帮您搜一下吧。"
+
+        compare_text = self._format_compare_table(ctx.compare_basket, dimensions)
+        dim_lines = "\n".join(
+            f"- {d['name']}（权重 {int(d['weight'] * 100)}%）" for d in dimensions
+        )
+
+        messages = [
+            {"role": "system", "content": "你是手机对比专家。根据参数逐项对比并给出建议。"},
+            {"role": "user", "content": f"""请对比以下商品：
+
+{compare_text}
+
+对比维度：
+{dim_lines}
+
+请逐项对比，最后给出明确建议。"""},
+        ]
+
+        resp = self.client.chat.completions.create(
+            model=self.model_synthesize,
+            messages=messages,
+            temperature=0.3,
+            max_tokens=800,
+        )
+
+        ctx.phase = "follow_up"
+        return resp.choices[0].message.content
+
+    def _format_compare_table(self, products: list, dimensions: list) -> str:
+        """格式化对比表"""
+        lines = []
+        for i, p in enumerate(products):
+            lines.append(f"[{i+1}] {p.get('product_name', '')} — ¥{p.get('price', '')}")
+            for d in dimensions:
+                val = p.get(d["key"], "—")
+                lines.append(f"    {d['name']}: {val}")
+            lines.append("")
+        return "\n".join(lines)
+
+    def _detect_budget_adjust(self, query: str):
+        """检测预算调整"""
+        patterns = [
+            r"再加\s*(\d+)",
+            r"预算.*?(\d+)",
+            r"(\d+)\s*以内",
+            r"降到\s*(\d+)",
+        ]
+        for pat in patterns:
+            m = re.search(pat, query)
+            if m:
+                return int(m.group(1))
+        return None
+
+    def _detect_product_switch(self, query: str):
+        """检测商品切换"""
+        ctx = self.shopping_context
+        for c in ctx.candidates:
+            name = c.get("product_name", "")
+            if name and name in query:
+                return name
+        return None

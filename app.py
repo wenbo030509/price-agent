@@ -80,7 +80,26 @@ def initialize():
     
     # 初始化并行查询Agent
     init_parallel_agent()
-    
+
+    # M2: Embedding 预热（在平台 DB 和并行 Agent 就绪后）
+    try:
+        from platforms.parallel_agent import init_product_embeddings, _product_embedding_cache
+        init_product_embeddings(
+            settings.industry_config,
+            settings.embedding_client,
+        )
+        print(f"[M2] Embedding 预热完成，缓存 {len(_product_embedding_cache)} 个商品向量")
+    except Exception as e:
+        print(f"[M2] Embedding 预热跳过: {e}")
+
+    # M3: RAG 知识库初始化
+    try:
+        from tools.rag_tool import init_knowledge_retriever
+        init_knowledge_retriever("mobile")
+        print("[M3] RAG 知识库初始化完成")
+    except Exception as e:
+        print(f"[M3] RAG 知识库初始化跳过: {e}")
+
     # 初始化Agent（传入多模型配置和参数）
     agent = ReActAgent(
         client=settings.client,
