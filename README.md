@@ -163,10 +163,5 @@ price-agent/
 
 ## 文档
 
-- [总规划](docs/下一代电商语义召回与Agent推荐-规划文档.md)
-- [M0: 基础设施评估](docs/modules/00-基础设施评估.md)
-- [M1: 行业配置框架](docs/modules/01-行业配置框架.md)
-- [M2: 语义召回升级](docs/modules/02-语义召回升级.md)
-- [M3: RAG 知识库](docs/modules/03-RAG知识库.md)
-- [M4: 生成式推荐](docs/modules/04-生成式推荐.md)
-- [M5: 引导式购物 Agent](docs/modules/05-引导式购物Agent.md)
+- [总规划](roadmap.md)
+
