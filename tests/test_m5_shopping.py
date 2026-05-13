@@ -2,6 +2,8 @@
 测试 M5 引导式购物 Agent — 意图分类、ShoppingContext 状态机、槽位提取、对话流程、回归。
 """
 import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 def test_shopping_context():

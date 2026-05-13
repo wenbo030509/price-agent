@@ -2,7 +2,8 @@
 测试修复后的商品查询逻辑
 """
 import sys
-sys.path.insert(0, '.')
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from platforms import PlatformDatabase, init_all_platforms
 

@@ -5,8 +5,10 @@
 因此批量语义文本需要逐条调用，内部用 ThreadPoolExecutor 并行。
 """
 import sys
+import os
 import time
 import numpy as np
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 def test_single_text(client):

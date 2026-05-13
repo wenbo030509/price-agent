@@ -2,6 +2,8 @@
 测试 M3 RAG 知识库 — 索引构建、chunk 分片、BM25+语义检索、工具注册、回归。
 """
 import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 def test_index_and_chunk():

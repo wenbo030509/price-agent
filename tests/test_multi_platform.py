@@ -2,7 +2,8 @@
 测试多平台比价功能
 """
 import sys
-sys.path.insert(0, '.')
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from platforms import init_all_platforms, PlatformParallelAgent, format_comparison_result
 

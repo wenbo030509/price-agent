@@ -2,7 +2,9 @@
 测试 M2 语义召回升级 — 验证 build_product_text、开关降级、向量召回效果。
 """
 import sys
+import os
 import numpy as np
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # ── 测试 1: build_product_text ──────────────────────────────────────
 

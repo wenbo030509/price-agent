@@ -2,6 +2,8 @@
 测试 M1 行业配置框架 — 加载、默认值、Schema、注入链路。
 """
 import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 def test_load_default():

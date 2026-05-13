@@ -3,6 +3,7 @@
 
 from platforms import PlatformDatabase
 from platforms import get_all_platforms
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 print("=" * 60)
 print("测试颜色和内存字段功能")
