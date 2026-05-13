@@ -188,7 +188,7 @@ def test_regression():
     """已有功能不受影响"""
     print("[6/6] 已有功能回归...")
     import sys, os
-    sys.path.insert(0, "tests")
+    sys.path.insert(0, "eval")
 
     import eval_helpers
     from eval_it3c import test_intent_detection, test_semantic_search_filters

@@ -1,6 +1,6 @@
 """
 P0 单元测试 — 不依赖 LLM，验证底层函数正确性
-执行：python3 tests/eval_p0_unit.py
+执行：python3 eval/eval_p0_unit.py
 """
 
 import sys

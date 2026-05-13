@@ -1,6 +1,6 @@
 """
 IT3C 行业优化评估 — P0 单元测试 / P1 属性提取 / P2 端到端
-执行：python3 tests/eval_it3c.py
+执行：python3 eval/eval_it3c.py
 P0 不依赖 LLM，P1/P2 需要 LLM API 调用。
 跳过图片相关评估。
 """
@@ -11,7 +11,7 @@ import json
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from tests.eval_helpers import (
+from eval_helpers import (
     EvalRecorder, save_report, print_summary, score_param_extraction,
     extract_prices, extract_platform_names, detect_hallucination,
 )

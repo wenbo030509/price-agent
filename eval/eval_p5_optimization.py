@@ -1,6 +1,6 @@
 """
 P5 优化验证测试 — 验证坑2-5修复后的 Agent 行为
-执行：python3 tests/eval_p5_optimization.py
+执行：python3 eval/eval_p5_optimization.py
 约 13 个 case（含 LLM 调用），预计耗时 1-2 分钟
 
 覆盖：

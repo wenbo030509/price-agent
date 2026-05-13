@@ -45,5 +45,5 @@ docs/
 # Claude Code
 .claude/
 
-# 评估报告
-tests/eval_results/
+# 评估报告（自动生成）
+eval/results/

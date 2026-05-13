@@ -156,7 +156,8 @@ price-agent/
   knowledge/mobile/        ← 手机领域知识库（M3）
     processors/            ← 芯片对比文档
     reviews/               ← 机型评测文档
-  tests/                   ← 评估 + 验证脚本（P0-P6 + IT3C + M1-M5）
+  tests/                   ← 独立模块验证脚本（M1-M5 + 基础功能）
+  eval/                    ← 评估框架（P0-P6 + IT3C 回归套件）
   docs/modules/            ← 模块详细设计文档
 ```
 

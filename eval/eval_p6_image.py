@@ -1,6 +1,6 @@
 """
 P6 图片搜索评估 — 验证图片→属性提取→比价链路
-执行：python3 tests/eval_p6_image.py
+执行：python3 eval/eval_p6_image.py
 含单元测试（无 API）+ E2E 测试（需多模态模型），预计耗时 30s-60s
 """
 import sys

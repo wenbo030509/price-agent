@@ -1,6 +1,6 @@
 """
 P1 工具参数提取测试 — 验证 _parse_attrs_from_query 的属性和别名提取
-执行：python3 tests/eval_p1_parse.py
+执行：python3 eval/eval_p1_parse.py
 需 LLM API 调用，约 20 个 case，预计耗时 30s
 """
 

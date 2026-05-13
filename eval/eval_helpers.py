@@ -202,7 +202,7 @@ class EvalRecorder:
 
 def save_report(phase: str, summary: Dict):
     """保存单阶段评估报告"""
-    os.makedirs("tests/eval_results", exist_ok=True)
+    os.makedirs("eval/results", exist_ok=True)
     timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
     filename = f"tests/eval_results/{timestamp}_{phase}.json"
     with open(filename, "w", encoding="utf-8") as f:

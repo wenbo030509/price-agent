@@ -159,7 +159,7 @@ def test_regression():
     """回归：RAG 不影响现有模块"""
     print("[5/6] 已有功能回归...")
     import sys, os
-    sys.path.insert(0, "tests")
+    sys.path.insert(0, "eval")
 
     import eval_helpers
     from eval_it3c import test_semantic_search_filters

@@ -1,6 +1,6 @@
 """
 P3 能力边界测试 — 测试 Agent 的鲁棒性极限
-执行：python3 tests/eval_p3_boundary.py
+执行：python3 eval/eval_p3_boundary.py
 约 16 个 case，预计耗时 60s
 
 注意：部分 case（多轮对话）依赖未实现的 history 功能，标记为 known_missing。

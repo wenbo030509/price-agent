@@ -1,6 +1,6 @@
 """
 P4 回归基准 — 汇总 P0-P3 结果，生成基准报告
-执行：python3 tests/eval_p4_benchmark.py
+执行：python3 eval/eval_p4_benchmark.py
 读取已有的各阶段 JSON 报告，汇总输出。
 """
 
@@ -13,7 +13,7 @@ from datetime import datetime
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
-def find_latest_reports(results_dir: str = "tests/eval_results"):
+def find_latest_reports(results_dir: str = "eval/results"):
     """找出各阶段最新的报告文件"""
     reports = {}
     for phase in ["P0_unit", "P1_parse", "P2_e2e", "P3_boundary", "P5_optimization", "P6_image"]:
@@ -149,7 +149,7 @@ def main():
             }
 
     # 保存
-    os.makedirs("tests/eval_results", exist_ok=True)
+    os.makedirs("eval/results", exist_ok=True)
     timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
     filename = f"tests/eval_results/{timestamp}_P4_benchmark.json"
     with open(filename, "w", encoding="utf-8") as f:

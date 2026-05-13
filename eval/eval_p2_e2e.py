@@ -1,6 +1,6 @@
 """
 P2 端到端测试 — 完整 ReAct 循环，验证工具选择、参数、答案正确性
-执行：python3 tests/eval_p2_e2e.py
+执行：python3 eval/eval_p2_e2e.py
 需多次 LLM API 调用，约 23 个 case，预计耗时 2-3 分钟
 """
 
