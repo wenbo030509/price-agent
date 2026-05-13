@@ -1,34 +1,18 @@
-# 环境配置文件（包含敏感信息）
+# 环境配置
 .env
 
-# 数据库文件
+# 数据库
 *.db
 *.sqlite
 *.sqlite3
 
-# Python 缓存
+# Python
 __pycache__/
 *.py[cod]
-*$py.class
 *.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
 *.egg-info/
-.installed.cfg
-*.egg
 
-# IDE 和编辑器
+# IDE
 .vscode/
 .idea/
 *.swp
@@ -39,12 +23,11 @@ wheels/
 # 虚拟环境
 venv/
 env/
-ENV/
 
-# 日志文件
+# 日志
 *.log
 
-# 测试和覆盖率
+# 测试缓存
 .pytest_cache/
 .coverage
 htmlcov/
@@ -53,25 +36,14 @@ htmlcov/
 debug_tool.py
 
 # 临时文件
-tmp/
-temp/
 *.tmp
-
 static/uploads/
 
-# 项目文档
-docs/IT3C问题复盘-产品视角.md   # 产品复盘，内部参考
-docs/IT3C行业优化文档.md       # 内部提示词，不入库
-docs/plan-execute-方案.md
-docs/MULTI_PLATFORM_README.md
-docs/测试用例手册.md
-docs/评估文档.md
-docs/需求文档.md
-docs/优化文档.md
-# 规划文档和模块文档 → 入库（docs/下一代*.md、docs/modules/）
+# 文档（仅 README.md 入库）
+docs/
 
-# Claude Code 工作目录
+# Claude Code
 .claude/
 
-# 评估报告（自动生成，不入库）
+# 评估报告
 tests/eval_results/
