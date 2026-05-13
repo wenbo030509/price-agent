@@ -229,6 +229,110 @@ def test_processor_aliases(recorder: EvalRecorder):
     })
 
 
+# ── M2 向量召回回归 ──────────────────────────────────────────────────
+
+def test_vector_recall_enabled(recorder: EvalRecorder):
+    """P0-IT3C-5: 开启向量召回后语义搜索不破坏规则过滤"""
+    from tools.semantic_search_tool import semantic_product_search
+    from config.industry_loader import load_industry_config, clear_cache
+
+    # 确保向量召回开启
+    clear_cache()
+    config = load_industry_config("mobile")
+    assert config.get("enable_vector_recall"), "M2 向量召回应已开启"
+
+    # VR-IT-01: 开启向量召回，gaming 过滤仍生效
+    r = semantic_product_search(use_case="gaming", category="手机")
+    passed = r["success"] and all(
+        "gaming" in (rec.get("use_case_tags") or "[]").lower()
+        for rec in r["recommendations"]
+    )
+    recorder.record("VR-IT-01", passed, {
+        "reason": f"向量召回开启, found={r['total_found']}, all match gaming" if passed
+        else "向量召回后 gaming 过滤失效"
+    })
+
+    # VR-IT-02: 开启向量召回，budget 硬过滤仍生效
+    r = semantic_product_search(budget_max=4500, category="手机")
+    passed = r["success"] and all(rec["price"] <= 4500 for rec in r["recommendations"])
+    recorder.record("VR-IT-02", passed, {
+        "reason": f"found={r['total_found']}, all <= 4500" if passed
+        else "向量召回后 budget 过滤失效"
+    })
+
+    # VR-IT-03: 开启向量召回，processor_brand 过滤仍生效
+    r = semantic_product_search(processor_brand="sd", category="手机")
+    passed = r["success"] and r["total_found"] >= 1
+    recorder.record("VR-IT-03", passed, {
+        "reason": f"found={r['total_found']} sd phones" if passed
+        else "向量召回后 processor 过滤失效"
+    })
+
+    # VR-IT-04: 开启向量召回，brand 过滤仍生效
+    r = semantic_product_search(brand="Apple", category="手机")
+    passed = r["success"] and all(
+        rec.get("brand", "") == "Apple" for rec in r["recommendations"]
+    )
+    recorder.record("VR-IT-04", passed, {
+        "reason": f"found={r['total_found']} Apple phones" if passed
+        else "向量召回后 brand 过滤失效"
+    })
+
+    # VR-IT-05: 开启向量召回，排序有效（value_score 递减）
+    r = semantic_product_search(category="手机", sort_by="value")
+    recs = r.get("recommendations", [])
+    scores = [rec.get("value_score", 0) for rec in recs]
+    passed = len(recs) < 2 or all(
+        scores[i] >= scores[i + 1] for i in range(len(scores) - 1)
+    )
+    recorder.record("VR-IT-05", passed, {
+        "reason": f"value_scores: {[round(s, 1) for s in scores[:5]]}"
+    })
+
+
+# ── M5 购物意图分类回归 ────────────────────────────────────────────────
+
+def test_shopping_intent(recorder: EvalRecorder):
+    """P0-IT3C-6: shopping 意图分类 + 不干扰已有意图"""
+    from config import Settings
+    from tools import tool_registry, init_parallel_agent
+    from platforms import init_all_platforms
+    from agent import ReActAgent
+
+    init_all_platforms()
+    init_parallel_agent()
+    s = Settings()
+    agent = ReActAgent(
+        client=s.client, model=s.model,
+        tools=tool_registry.get_schemas(),
+        tool_map=tool_registry.get_tool_map(),
+        config={"industry_config": s.industry_config},
+    )
+
+    cases = [
+        # (case_id, query, expected_intent)
+        ("SI-IT-01", "想买个手机", "shopping"),
+        ("SI-IT-02", "帮我挑一款", "shopping"),
+        ("SI-IT-03", "想换个手机", "shopping"),
+        ("SI-IT-04", "买个", "shopping"),
+        # 不触发 shopping — 有场景/预算/型号
+        ("SI-IT-05", "想买个游戏手机", "recommendation"),
+        ("SI-IT-06", "想买5000左右的", "recommendation"),
+        ("SI-IT-07", "推荐游戏手机", "recommendation"),
+        ("SI-IT-08", "想买iPhone 15", "query"),
+        # 已有意图不受影响
+        ("SI-IT-09", "iPhone 15 多少钱", "query"),
+        ("SI-IT-10", "iPhone 15 和小米14 哪个好", "comparison"),
+    ]
+
+    for case_id, query, expected in cases:
+        result = agent._detect_intent(query)
+        passed = result == expected
+        recorder.record(case_id, passed, {
+            "reason": f"'{query}' → {result}" + ("" if passed else f", 期望 {expected}")
+        })
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # P1 — IT3C 属性提取（需 LLM）
 # ══════════════════════════════════════════════════════════════════════════════
@@ -521,6 +625,12 @@ def main(p0_only=True):
 
     print("\n--- P0-IT3C-4: 处理器别名 ---")
     test_processor_aliases(recorder)
+
+    print("\n--- P0-IT3C-5: M2 向量召回回归 ---")
+    test_vector_recall_enabled(recorder)
+
+    print("\n--- P0-IT3C-6: M5 购物意图分类 ---")
+    test_shopping_intent(recorder)
 
     # ── P1/P2（需 LLM） ──
     if not p0_only:

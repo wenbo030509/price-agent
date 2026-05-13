@@ -151,7 +151,7 @@ def main():
     # 保存
     os.makedirs("eval/results", exist_ok=True)
     timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
-    filename = f"tests/eval_results/{timestamp}_P4_benchmark.json"
+    filename = f"eval/results/{timestamp}_P4_benchmark.json"
     with open(filename, "w", encoding="utf-8") as f:
         json.dump(report, f, ensure_ascii=False, indent=2)
 
