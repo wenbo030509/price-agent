@@ -131,12 +131,12 @@ class ReActAgent:
         if history:
             history = self._slide_window(history)
 
+        intent = self._detect_intent(user_query)
+
         # M5: 检测购物中途退出
         if self.shopping_context.phase != "greeting" and intent != "shopping":
             if self._is_ending_shopping(user_query):
                 self.shopping_context.reset()
-
-        intent = self._detect_intent(user_query)
 
         if intent == "recommendation":
             if verbose:
