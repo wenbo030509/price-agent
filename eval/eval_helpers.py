@@ -200,14 +200,54 @@ class EvalRecorder:
         }
 
 
-def save_report(phase: str, summary: Dict):
-    """保存单阶段评估报告"""
+_session_id: Optional[str] = None
+
+
+def set_session_id(session_id: Optional[str]):
+    """设置当前评估 session，同一 session 内的报告共享相同时间戳前缀"""
+    global _session_id
+    _session_id = session_id
+
+
+def get_session_id(auto_create: bool = True) -> Optional[str]:
+    global _session_id
+    if _session_id is None:
+        env_sid = os.getenv("EVAL_SESSION_ID", "").strip()
+        if env_sid:
+            _session_id = env_sid
+        elif auto_create:
+            _session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+    return _session_id
+
+
+def save_report(phase: str, summary: Dict, session_id: Optional[str] = None):
+    """保存单阶段评估报告。若提供 session_id 则按 session 分组，否则用 _session_id。"""
     os.makedirs("eval/results", exist_ok=True)
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
-    filename = f"eval/results/{timestamp}_{phase}.json"
+    sid = session_id or get_session_id(True)
+    filename = f"eval/results/{sid}_{phase}.json"
+    summary["session_id"] = sid
+    summary["saved_at"] = datetime.now().isoformat()
     with open(filename, "w", encoding="utf-8") as f:
         json.dump(summary, f, ensure_ascii=False, indent=2)
     return filename
+
+
+def find_session_reports(session_id: str) -> Dict[str, str]:
+    """在 eval/results/ 中找出属于指定 session 的所有报告"""
+    reports = {}
+    results_dir = os.path.join("eval", "results")
+    if not os.path.isdir(results_dir):
+        return reports
+    for fname in sorted(os.listdir(results_dir)):
+        if fname.startswith(f"{session_id}_") and fname.endswith(".json"):
+            phase = fname[len(session_id) + 1:].replace(".json", "")
+            reports[phase] = os.path.join(results_dir, fname)
+    return reports
+
+
+def load_report(filepath: str) -> dict:
+    with open(filepath, "r", encoding="utf-8") as f:
+        return json.load(f)
 
 
 def print_summary(summary: Dict):

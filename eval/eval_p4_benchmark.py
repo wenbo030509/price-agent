@@ -92,9 +92,16 @@ def main():
     print("  P4 回归基准汇总")
     print("=" * 60)
 
-    reports = find_latest_reports()
+    session_id = os.getenv("EVAL_SESSION_ID", "")
+
+    if session_id:
+        from eval_helpers import find_session_reports
+        reports = find_session_reports(session_id)
+    else:
+        reports = find_latest_reports()
+
     if not reports:
-        print("\n未找到评估报告。请先运行 P0-P3。")
+        print("\n未找到评估报告。请先运行 P0-P5/P6。")
         return
 
     print(f"\n读取报告：")
