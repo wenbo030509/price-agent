@@ -743,52 +743,83 @@ class ReActAgent:
             if not response_msg.tool_calls:
                 return response_msg.content
 
-            tool_call = response_msg.tool_calls[0]
-            tool_name = tool_call.function.name
-            tool_args = json.loads(tool_call.function.arguments)
+            # ── Fix: 处理所有 tool_calls，每条 tool_call_id 都有对应 tool 消息 ──
+            tool_call_count = len(response_msg.tool_calls)
+            if verbose and tool_call_count > 1:
+                print(f"【需要调用 {tool_call_count} 个工具】")
 
-            if verbose:
-                print(f"【Action】调用工具：{tool_name}，参数：{tool_args}")
+            all_tool_results = []
+            all_empty = True
+            should_reflect = False
+            reflect_tool_name = None
+            reflect_tool_args = None
+            reflect_observation = None
+            reflect_retry_count = 0
 
-            try:
-                tool_func = self.tool_map[tool_name]
-                observation = tool_func(**tool_args)
-            except Exception as e:
-                observation = {"error": f"工具执行失败：{str(e)}"}
+            for tc in response_msg.tool_calls:
+                tool_name = tc.function.name
+                try:
+                    tool_args = json.loads(tc.function.arguments)
+                except json.JSONDecodeError:
+                    tool_args = {}
 
-            observation_str = json.dumps(observation, ensure_ascii=False, indent=2)
+                if verbose:
+                    print(f"  ├─【Action】{tool_name}({tool_args})")
 
-            if verbose:
-                print(f"【Observation】{observation_str[:500]}{'...' if len(observation_str) > 500 else ''}")
+                try:
+                    tool_func = self.tool_map[tool_name]
+                    observation = tool_func(**tool_args)
+                except Exception as e:
+                    observation = {"error": f"工具执行失败：{str(e)}"}
 
-            # ── 自反思：检测空结果并引导 LLM 重试或追问 ──
-            is_empty = self._is_empty_result(observation)
+                observation_str = json.dumps(observation, ensure_ascii=False, indent=2)
 
-            if is_empty:
-                empty_result_count[tool_name] = empty_result_count.get(tool_name, 0) + 1
+                if verbose:
+                    print(f"  └─【Observation-{tool_name}】{observation_str[:300]}")
 
-                if empty_result_count[tool_name] <= self.max_reflection_retries:
-                    reflection_msg = self._build_reflection_message(
-                        tool_name, tool_args, observation, empty_result_count[tool_name]
-                    )
-                    if verbose:
-                        print(f"【Reflection】{reflection_msg}")
-                    messages.append({
-                        "role": "system",
-                        "content": reflection_msg
-                    })
-                    # 不把空结果的 tool message 加入，让 LLM 重新选择工具
-                    continue
+                is_empty = self._is_empty_result(observation)
 
-            # 重置空结果计数（非空结果）
-            empty_result_count.pop(tool_name, None)
+                if is_empty:
+                    empty_result_count[tool_name] = empty_result_count.get(tool_name, 0) + 1
 
+                    if empty_result_count[tool_name] <= self.max_reflection_retries:
+                        should_reflect = True
+                        reflect_tool_name = reflect_tool_name or tool_name
+                        reflect_tool_args = reflect_tool_args or tool_args
+                        reflect_observation = reflect_observation or observation
+                        reflect_retry_count = max(reflect_retry_count, empty_result_count[tool_name])
+                else:
+                    all_empty = False
+                    empty_result_count.pop(tool_name, None)
+
+                all_tool_results.append({
+                    "tool_call_id": tc.id,
+                    "tool_name": tool_name,
+                    "content": observation_str,
+                    "is_empty": is_empty,
+                })
+
+            # 所有工具都空且触发反思 → 加反思消息跳过 tool 结果
+            if all_empty and should_reflect:
+                reflection_msg = self._build_reflection_message(
+                    reflect_tool_name, reflect_tool_args, reflect_observation, reflect_retry_count
+                )
+                if verbose:
+                    print(f"【Reflection】{reflection_msg}")
+                messages.append({
+                    "role": "system",
+                    "content": reflection_msg
+                })
+                continue
+
+            # 追加 assistant 消息和全部 tool 结果
             messages.append(response_msg)
-            messages.append({
-                "role": "tool",
-                "tool_call_id": tool_call.id,
-                "content": observation_str
-            })
+            for tr in all_tool_results:
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tr["tool_call_id"],
+                    "content": tr["content"],
+                })
 
         return "已达到最大推理轮次，无法完成回答"
 
