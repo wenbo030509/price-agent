@@ -397,8 +397,8 @@ async function switchSession(sessionId) {
     currentSessionId = sessionId;
     loadSessions();
     clearChat();
-    // 切换历史会话 → 默认显示推理过程 Tab
-    switchRightTab('reasoning-tab');
+    // 切换历史会话 → 默认显示调试 Tab
+    switchRightTab('debug-tab');
     try {
         const resp = await fetch(`/api/sessions/${sessionId}/messages`);
         const data = await resp.json();
