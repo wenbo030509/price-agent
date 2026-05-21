@@ -2,6 +2,9 @@
 多平台并行查询Agent
 支持同时从多个平台查询商品数据并汇总结果
 """
+import os
+import pickle
+import hashlib
 import concurrent.futures
 import threading
 from typing import List, Dict, Optional
@@ -315,21 +318,49 @@ class PlatformParallelAgent:
 # 商品名 → embedding 向量缓存
 _product_embedding_cache: Dict[str, any] = {}
 
+# embedding 持久化缓存文件
+_EMBEDDING_CACHE_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "embeddings_cache.pkl")
+
+
+def _product_fingerprint(product: dict, fields: List[str]) -> int:
+    """计算商品 embedding 文本的哈希指纹，用于检测内容变化"""
+    from tools.semantic_search_tool import build_product_text
+    text = build_product_text(product, fields)
+    return int(hashlib.md5(text.encode("utf-8")).hexdigest(), 16) % (2 ** 63)
+
+
+def _load_embedding_cache() -> Dict:
+    """从磁盘加载持久化的 embedding 缓存"""
+    if not os.path.exists(_EMBEDDING_CACHE_FILE):
+        return {}
+    try:
+        with open(_EMBEDDING_CACHE_FILE, "rb") as f:
+            cached = pickle.load(f)
+        return cached or {}
+    except Exception:
+        return {}
+
+
+def _save_embedding_cache(cache: dict):
+    """将 embedding 缓存持久化到磁盘"""
+    try:
+        with open(_EMBEDDING_CACHE_FILE, "wb") as f:
+            pickle.dump(cache, f)
+    except Exception as e:
+        print(f"[Embedding] 缓存保存失败: {e}")
+
 
 def init_product_embeddings(industry_config: dict, embedding_client):
     """
     对所有平台的商品预计算 embedding 并缓存。
-    调用时机：init_all_platforms() 之后调用一次。
-
-    Args:
-        industry_config: 行业 Config（需含 embedding_fields）
-        embedding_client: config.embedding.EmbeddingClient 实例
+    首次运行全量计算并持久化；后续只对新增/变更商品做增量更新。
     """
+    import numpy as np
+    from tools.semantic_search_tool import build_product_text
+
     embedding_fields = industry_config.get("embedding_fields", [])
     if not embedding_fields:
         return
-
-    from tools.semantic_search_tool import build_product_text
 
     agent = PlatformParallelAgent()
     result = agent.query_all_products_parallel()
@@ -344,15 +375,55 @@ def init_product_embeddings(industry_config: dict, embedding_client):
     if not all_products:
         return
 
-    texts = [build_product_text(p, embedding_fields) for p in all_products]
-    embeddings = embedding_client.embed_texts(texts)
-
-    import numpy as np
+    # 1. 加载已有缓存
+    cached = _load_embedding_cache()
     global _product_embedding_cache
-    for product, emb in zip(all_products, embeddings):
-        name = product.get("product_name", "")
-        if name:
-            _product_embedding_cache[name] = np.array(emb, dtype=np.float32)
+
+    # 2. 计算每个商品的指纹，找出新增/变更的商品
+    current_fingerprints = {}
+    to_embed = []
+    reused = 0
+
+    for p in all_products:
+        name = p.get("product_name", "")
+        if not name:
+            continue
+        fp = _product_fingerprint(p, embedding_fields)
+        current_fingerprints[name] = fp
+
+        if name in cached and cached[name].get("fingerprint") == fp:
+            # 缓存命中，直接复用
+            _product_embedding_cache[name] = cached[name]["embedding"]
+            reused += 1
+        else:
+            # 新增或内容变更，需要重新计算
+            to_embed.append(p)
+
+    # 3. 只对需要更新的商品计算 embedding
+    if to_embed:
+        texts = [build_product_text(p, embedding_fields) for p in to_embed]
+        embeddings = embedding_client.embed_texts(texts)
+        for product, emb in zip(to_embed, embeddings):
+            name = product.get("product_name", "")
+            if name:
+                vec = np.array(emb, dtype=np.float32)
+                _product_embedding_cache[name] = vec
+                cached[name] = {
+                    "embedding": vec,
+                    "fingerprint": current_fingerprints[name],
+                }
+        print(f"[Embedding] 增量更新 {len(to_embed)} 个商品")
+
+    # 4. 清理缓存中已删除的商品
+    current_names = set(current_fingerprints.keys())
+    stale = [n for n in cached if n not in current_names]
+    for n in stale:
+        del cached[n]
+
+    # 5. 持久化
+    _save_embedding_cache(cached)
+
+    print(f"[Embedding] 缓存就绪: {reused} 复用 + {len(to_embed)} 新算 = {len(_product_embedding_cache)} 个向量")
 
 
 def get_cached_embedding(product_name: str):

@@ -6,6 +6,9 @@
 *.sqlite
 *.sqlite3
 
+# Embedding 缓存
+embeddings_cache.pkl
+
 # Python
 __pycache__/
 *.py[cod]
