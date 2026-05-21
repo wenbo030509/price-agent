@@ -331,6 +331,10 @@ function switchRightTab(tabId) {
     if (tabEl) {
         bootstrap.Tab.getOrCreateInstance(tabEl).show();
     }
+    // 切换到调试 Tab 时自动刷新 trace 列表
+    if (tabId === 'debug-tab') {
+        loadTraceList();
+    }
 }
 
 async function createNewSession() {
