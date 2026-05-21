@@ -331,6 +331,13 @@ function filterSessions() {
 
 // ── 会话 CRUD ─────────────────────────────────────────────────
 
+function switchRightTab(tabId) {
+    const tabEl = document.getElementById(tabId);
+    if (tabEl) {
+        bootstrap.Tab.getOrCreateInstance(tabEl).show();
+    }
+}
+
 async function createNewSession() {
     try {
         const resp = await fetch('/api/sessions', { method: 'POST' });
@@ -340,6 +347,8 @@ async function createNewSession() {
             loadSessions();
             clearChat();
             document.getElementById('sessionSearch').value = '';
+            // 新建会话 → 默认显示商品管理 Tab
+            switchRightTab('products-tab');
         }
     } catch (e) { console.error('创建会话失败:', e); }
 }
@@ -383,6 +392,8 @@ async function switchSession(sessionId) {
     currentSessionId = sessionId;
     loadSessions();
     clearChat();
+    // 切换历史会话 → 默认显示推理过程 Tab
+    switchRightTab('reasoning-tab');
     try {
         const resp = await fetch(`/api/sessions/${sessionId}/messages`);
         const data = await resp.json();
