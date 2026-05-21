@@ -339,6 +339,16 @@ function switchRightTab(tabId) {
 }
 
 async function createNewSession() {
+    // 如果已有未使用的会话（无消息），直接切换到它
+    const unused = allSessions.find(s => s.title === '新会话');
+    if (unused) {
+        currentSessionId = unused.session_id;
+        loadSessions();
+        clearChat();
+        switchRightTab('products-tab');
+        return;
+    }
+
     try {
         const resp = await fetch('/api/sessions', { method: 'POST' });
         const data = await resp.json();
