@@ -69,6 +69,7 @@
 | M3: RAG 知识库 | BM25 + 语义混合检索，手机领域知识增强 | ✅ |
 | M4: 生成式推荐 | LLM 意图分解 + Rerank + 推荐解释（计划中） | 📋 |
 | M5: 引导式购物 Agent | ShoppingContext 状态机 + 槽位填充 + 多轮购物 | ✅ |
+| **推理可视化** | TraceEvent 结构化事件 + SSE 流式 + 模式可视化 + 调试仪表盘 | ✅ |
 
 ## 功能特性
 
@@ -95,6 +96,16 @@
 - **ShoppingContext 状态机**：GREETING → SLOT_FILLING → SEARCHING → RECOMMENDING → FOLLOW_UP
 - **槽位填充**：5 个槽位（场景/预算/品牌/处理器/屏幕），必填优先，最多追问 3 次
 - **对比模式**：多款商品按维度（性能/拍照/续航/价格/屏幕）逐项对比
+
+### 推理可视化（L1-L4）
+- **结构化 Trace 事件**：12 种事件类型（intent/mode/plan/step/tool/reflection/shopping），替代 print() 驱动
+- **SSE 实时流式传输**：`/api/chat/stream` 端点，前端 ReadableStream 消费，推理步骤逐个实时出现
+- **模式特定可视化**：
+  - M5 购物状态机：6 阶段横向进度条 + 槽位填充 chip
+  - Plan-Execute DAG：并行/串行分组 + 步骤状态 pending→running→done/error（pulse 动画）
+  - 时间瀑布：步骤耗时水平条形图
+  - 模型路由徽章：节点标题行内显示模型名称
+- **调试仪表盘**：Trace 自动保存 → 列表（按会话过滤）→ 逐步骤回放（速度 0.5x-5x）→ 性能摘要
 
 ### IT3C 手机品类
 - **17 个商品字段**：brand、processor、processor_brand、performance_tier、screen_size、battery、use_case_tags、description
@@ -137,6 +148,7 @@ ARK_EMBEDDING_MODEL=doubao-embedding-vision-251215
 price-agent/
   agent/
     react_engine.py        ← ReActAgent + ShoppingContext（M5）
+    trace.py               ← TraceEvent 结构化事件系统（L1-L2）
     prompts.py             ← System prompt + 6 工具使用指南（M3）
   config/
     settings.py            ← 配置管理 + 多模型路由 + Embedding
@@ -156,8 +168,16 @@ price-agent/
   knowledge/mobile/        ← 手机领域知识库（M3）
     processors/            ← 芯片对比文档
     reviews/               ← 机型评测文档
-  tests/                   ← 独立模块验证脚本（M1-M5 + 基础功能）
+  tests/
+    test_trace.py          ← L1/L2 结构化事件 + SSE 流式测试（72 用例）
+    conftest.py            ← pytest fixtures（client/indexer/retriever/agent）
+    test_m1_config.py      ← M1 配置测试
+    test_m2_recall.py      ← M2 召回测试
+    test_m3_rag.py         ← M3 RAG 测试
+    test_m5_shopping.py    ← M5 购物测试
+    test_react_engine.py   ← ReActEngine 核心测试
   eval/                    ← 评估框架（P0-P6 + IT3C 回归套件）
+    results/traces/        ← L4 自动保存的 trace 文件
   docs/modules/            ← 模块详细设计文档
 ```
 
