@@ -66,6 +66,12 @@ function renderMarkdown(text) {
 
 let reasoningNodes = [];
 
+// L3: 模式追踪状态
+let modeState = { mode: '', model: '' };               // 当前执行模式
+let shoppingState = { phase: '', slots: {}, slotDefs: [] };  // M5 状态机
+let planDAG = { steps: [], stepStatus: {}, model: '' };       // Plan-Execute DAG
+let stepTimings = [];                                          // 时间瀑布数据
+
 function addReasoningNode(type, title, detail, elapsedMs) {
     reasoningNodes.push({ type, title, detail, elapsedMs });
     renderTimeline();
@@ -73,6 +79,10 @@ function addReasoningNode(type, title, detail, elapsedMs) {
 
 function clearReasoning() {
     reasoningNodes = [];
+    modeState = { mode: '', model: '' };
+    shoppingState = { phase: '', slots: {}, slotDefs: [] };
+    planDAG = { steps: [], stepStatus: {}, model: '' };
+    stepTimings = [];
     renderTimeline();
 }
 
@@ -99,28 +109,185 @@ function renderTimeline() {
         return;
     }
 
-    container.innerHTML = `<div class="timeline">${reasoningNodes.map((n, i) => {
+    let html = '';
+
+    // L3: M5 购物状态机
+    if (modeState.mode === 'shopping') {
+        html += renderShoppingStepper();
+    }
+
+    // L3: Plan-Execute DAG
+    if (modeState.mode === 'plan_execute' && planDAG.steps.length > 0) {
+        html += renderPlanDAGView();
+    }
+
+    // 主时间线
+    html += `<div class="timeline">${reasoningNodes.map((n, i) => {
         const icon = NODE_ICONS[n.type] || '●';
         const label = NODE_LABELS[n.type] || n.type;
         const color = NODE_COLORS[n.type] || '#94A3B8';
         const hasBody = n.detail && n.detail.length > 0;
         const bodyClass = hasBody ? 'expanded' : 'no-body';
+
+        // L3: 模型徽章 — 对 plan_generated / react_round / synthesize 节点
+        let modelBadge = '';
+        if (n._model) {
+            modelBadge = `<span class="model-badge" title="模型: ${escapeHtml(n._model)}">${escapeHtml(n._model)}</span>`;
+        }
+
         return `
         <div class="timeline-node ${bodyClass}" id="timelineNode${i}">
             <div class="timeline-dot" style="background:${color}">${icon}</div>
             <div class="timeline-header" ${hasBody ? `onclick="toggleTimelineNode(${i})"` : ''}>
                 <span class="timeline-title">
                     <span class="icon">${icon}</span>
-                    ${label} · ${escapeHtml(n.title)}
+                    ${label} · ${escapeHtml(n.title)} ${modelBadge}
                 </span>
                 <span class="timeline-meta">
-                    ${n.elapsedMs ? `<span>${n.elapsedMs}ms</span>` : ''}
+                    ${n.elapsedMs ? `<span class="time-badge">${n.elapsedMs}ms</span>` : ''}
                     ${hasBody ? '<span class="timeline-chevron">▶</span>' : ''}
                 </span>
             </div>
             ${hasBody ? `<div class="timeline-body">${escapeHtml(n.detail)}</div>` : ''}
         </div>
     `}).join('')}</div>`;
+
+    // L3: 时间瀑布
+    if (stepTimings.length > 0) {
+        html += renderTimingWaterfall();
+    }
+
+    container.innerHTML = html;
+}
+
+// ── L3: M5 购物状态机 ──────────────────────────────────────────
+
+const SHOPPING_PHASES = [
+    { key: 'greeting', label: '问候', icon: '👋' },
+    { key: 'slot_filling', label: '了解需求', icon: '📋' },
+    { key: 'searching', label: '搜索商品', icon: '🔍' },
+    { key: 'recommending', label: '推荐结果', icon: '📊' },
+    { key: 'comparing', label: '商品对比', icon: '⚖' },
+    { key: 'follow_up', label: '跟进', icon: '💬' },
+];
+
+function renderShoppingStepper() {
+    const currentIdx = SHOPPING_PHASES.findIndex(p => p.key === shoppingState.phase);
+    const filledSlots = Object.keys(shoppingState.slots).length;
+
+    let stepperHTML = '<div class="l3-shopping-stepper">';
+    stepperHTML += '<div class="l3-stepper-title">🛒 引导式购物</div>';
+    stepperHTML += '<div class="l3-stepper-track">';
+
+    SHOPPING_PHASES.forEach((p, i) => {
+        let cls = 'l3-step';
+        if (i < currentIdx) cls += ' done';
+        else if (i === currentIdx) cls += ' active';
+        stepperHTML += `
+            <div class="${cls}">
+                <div class="l3-step-dot">${p.icon}</div>
+                <div class="l3-step-label">${p.label}</div>
+            </div>`;
+    });
+
+    stepperHTML += '</div>';
+
+    // 槽位进度
+    if (filledSlots > 0) {
+        const slotEntries = Object.entries(shoppingState.slots).map(([k, v]) =>
+            `<span class="l3-slot-chip">${escapeHtml(k)}=${escapeHtml(String(v))}</span>`
+        ).join('');
+        stepperHTML += `<div class="l3-slot-bar">已收集: ${slotEntries} (${filledSlots} 项)</div>`;
+    }
+
+    stepperHTML += '</div>';
+    return stepperHTML;
+}
+
+// ── L3: Plan-Execute DAG ────────────────────────────────────────
+
+function renderPlanDAGView() {
+    const steps = planDAG.steps;
+    if (steps.length === 0) return '';
+
+    // 分组：独立步骤 vs 依赖步骤
+    const independent = steps.filter(s => !s.depends_on);
+    const dependent = steps.filter(s => s.depends_on);
+
+    let html = '<div class="l3-plan-dag">';
+    html += `<div class="l3-dag-title">📋 执行计划 · ${steps.length} 步 <span class="model-badge">${escapeHtml(planDAG.model || '')}</span></div>`;
+
+    // 独立组（可并行）
+    if (independent.length > 0) {
+        html += '<div class="l3-dag-group parallel">';
+        html += `<div class="l3-dag-group-label">⚡ 并行执行 (${independent.length})</div>`;
+        html += '<div class="l3-dag-nodes">';
+        independent.forEach(s => {
+            const st = planDAG.stepStatus[s.step] || 'pending';
+            html += renderDAGStepNode(s, st);
+        });
+        html += '</div></div>';
+    }
+
+    // 依赖组（串行）
+    if (dependent.length > 0) {
+        html += '<div class="l3-dag-group serial">';
+        html += `<div class="l3-dag-group-label">🔗 串行执行 (${dependent.length})</div>`;
+        html += '<div class="l3-dag-nodes">';
+        dependent.forEach((s, i) => {
+            const st = planDAG.stepStatus[s.step] || 'pending';
+            if (i > 0) {
+                html += '<div class="l3-dag-arrow">↓</div>';
+            }
+            html += renderDAGStepNode(s, st);
+        });
+        html += '</div></div>';
+    }
+
+    html += '</div>';
+    return html;
+}
+
+function renderDAGStepNode(step, status) {
+    const statusIcon = { pending: '○', running: '◉', done: '✓', error: '✗' };
+    const statusCls = 'l3-dag-node ' + status;
+    const icon = statusIcon[status] || '○';
+    const depends = step.depends_on ? ` ← Step ${step.depends_on}` : '';
+    return `
+        <div class="${statusCls}">
+            <span class="l3-dag-status">${icon}</span>
+            <span class="l3-dag-tool">${escapeHtml(step.tool || '')}</span>
+            <span class="l3-dag-purpose">${escapeHtml(step.purpose || '')}</span>
+            ${depends ? `<span class="l3-dag-dep">${escapeHtml(depends)}</span>` : ''}
+        </div>`;
+}
+
+// ── L3: 时间瀑布 ───────────────────────────────────────────────
+
+function renderTimingWaterfall() {
+    const timings = stepTimings;
+    if (timings.length === 0) return '';
+
+    const maxElapsed = Math.max(...timings.map(t => t.elapsed), 1);
+
+    let html = '<div class="l3-timing-waterfall">';
+    html += '<div class="l3-timing-title">⏱ 步骤耗时</div>';
+
+    timings.forEach(t => {
+        const pct = Math.round((t.elapsed / maxElapsed) * 100);
+        const barCls = t.success ? 'l3-timing-bar' : 'l3-timing-bar error';
+        html += `
+            <div class="l3-timing-row">
+                <span class="l3-timing-label">Step ${t.step}</span>
+                <div class="l3-timing-track">
+                    <div class="${barCls}" style="width:${pct}%"></div>
+                </div>
+                <span class="l3-timing-val">${t.elapsed}ms</span>
+            </div>`;
+    });
+
+    html += '</div>';
+    return html;
 }
 
 function toggleTimelineNode(index) {
@@ -447,7 +614,7 @@ function mapEventToNode(ev) {
                 `  Step ${s.step}: ${s.tool}${s.depends_on ? ` (依赖 Step ${s.depends_on})` : ''} — ${s.purpose || ''}`
             ).join('\n');
             return { type: 'plan', title: `计划: ${d.step_count} 步`,
-                     detail: `模型: ${d.model || ''}\n${stepsSummary}`, elapsedMs: null };
+                     detail: `模型: ${d.model || ''}\n${stepsSummary}`, elapsedMs: null, _model: d.model || '' };
         }
 
         case 'step_start':
@@ -464,7 +631,7 @@ function mapEventToNode(ev) {
 
         case 'react_round':
             return { type: 'thought', title: `Round ${d.round} · Thought`,
-                     detail: d.thought || '', elapsedMs: null };
+                     detail: d.thought || '', elapsedMs: null, _model: d.model || '' };
 
         case 'tool_call': {
             const argsStr = typeof d.args === 'object' ? JSON.stringify(d.args) : String(d.args || '');
@@ -492,7 +659,7 @@ function mapEventToNode(ev) {
 
         case 'synthesize_start':
             return { type: 'plan', title: 'Phase 3: 综合分析',
-                     detail: `模型: ${d.model || ''}`, elapsedMs: null };
+                     detail: `模型: ${d.model || ''}`, elapsedMs: null, _model: d.model || '' };
 
         case 'synthesize_end':
             return { type: 'observation', title: '综合完成',
@@ -516,6 +683,39 @@ function mapEventToNode(ev) {
 }
 
 function addTraceEvent(ev) {
+    const d = ev.data || {};
+
+    // L3: 追踪模式状态
+    if (ev.type === 'mode_select') {
+        modeState = { mode: d.mode || '', model: d.model || '' };
+    }
+    // L3: 追踪 M5 购物状态
+    if (ev.type === 'shopping_phase') {
+        shoppingState.phase = d.phase || '';
+    }
+    if (ev.type === 'slot_filled') {
+        shoppingState.slots[d.slot] = d.value;
+    }
+    // L3: 追踪 Plan-Execute DAG
+    if (ev.type === 'plan_generated') {
+        const steps = d.steps || [];
+        planDAG = { steps: steps, stepStatus: {}, model: d.model || '' };
+        steps.forEach(s => { planDAG.stepStatus[s.step] = 'pending'; });
+    }
+    if (ev.type === 'step_start') {
+        if (planDAG.stepStatus[d.step] !== undefined) {
+            planDAG.stepStatus[d.step] = 'running';
+        }
+    }
+    if (ev.type === 'step_end') {
+        if (planDAG.stepStatus[d.step] !== undefined) {
+            planDAG.stepStatus[d.step] = d.success ? 'done' : 'error';
+        }
+        if (d.elapsed_ms) {
+            stepTimings.push({ step: d.step, elapsed: d.elapsed_ms, success: d.success });
+        }
+    }
+
     const node = mapEventToNode(ev);
     if (node) {
         reasoningNodes.push(node);
@@ -534,148 +734,6 @@ function renderTrace(events) {
         const node = mapEventToNode(ev);
         if (node) reasoningNodes.push(node);
     }
-    renderTimeline();
-}
-    reasoningNodes = [];
-
-    for (const ev of events) {
-        const d = ev.data || {};
-        switch (ev.type) {
-            case 'intent':
-                reasoningNodes.push({
-                    type: 'thought', title: `意图: ${d.intent}`,
-                    detail: `用户查询: ${d.query || ''}\n检测到 ${d.model_count || 0} 个已知型号`,
-                    elapsedMs: null,
-                });
-                break;
-
-            case 'mode_select':
-                const modeNames = { react: 'ReAct 循环', plan_execute: 'Plan-Execute 策略', shopping: '引导式购物' };
-                reasoningNodes.push({
-                    type: 'plan', title: `模式: ${modeNames[d.mode] || d.mode}`,
-                    detail: `原因: ${d.reason || ''}\n模型: ${d.model || ''}`,
-                    elapsedMs: null,
-                });
-                break;
-
-            case 'plan_generated':
-                const stepsSummary = (d.steps || []).map(s =>
-                    `  Step ${s.step}: ${s.tool}${s.depends_on ? ` (依赖 Step ${s.depends_on})` : ''} — ${s.purpose || ''}`
-                ).join('\n');
-                reasoningNodes.push({
-                    type: 'plan', title: `计划: ${d.step_count} 步`,
-                    detail: `模型: ${d.model || ''}\n${stepsSummary}`,
-                    elapsedMs: null,
-                });
-                break;
-
-            case 'step_start':
-                reasoningNodes.push({
-                    type: 'action', title: `Step ${d.step}: ${d.purpose || d.tool}`,
-                    detail: `工具: ${d.tool}\n依赖: ${d.depends_on ? 'Step ' + d.depends_on : '无（并行）'}\n分组: ${d.group || ''}`,
-                    elapsedMs: null,
-                });
-                break;
-
-            case 'step_end':
-                const icon = d.success ? '✓' : '✗';
-                reasoningNodes.push({
-                    type: d.success ? 'observation' : 'error',
-                    title: `${icon} Step ${d.step} ${d.success ? '完成' : '失败'}`,
-                    detail: `${d.summary || ''}${d.error ? '\n错误: ' + d.error : ''}`,
-                    elapsedMs: d.elapsed_ms || null,
-                });
-                break;
-
-            case 'react_round':
-                reasoningNodes.push({
-                    type: 'thought', title: `Round ${d.round} · Thought`,
-                    detail: d.thought || '',
-                    elapsedMs: null,
-                });
-                break;
-
-            case 'tool_call':
-                const argsStr = typeof d.args === 'object' ? JSON.stringify(d.args) : String(d.args || '');
-                const where = d.step ? `Step ${d.step} Round ${d.round || 1}` : `Round ${d.round || ''}`;
-                reasoningNodes.push({
-                    type: 'action', title: `${d.tool}`,
-                    detail: `${where}\n参数: ${argsStr}`,
-                    elapsedMs: null,
-                });
-                break;
-
-            case 'tool_result':
-                const resultIcon = d.found ? '✓' : (d.error ? '✗' : '⚠');
-                const resultTitle = d.found
-                    ? `找到 ${d.match_count} 个匹配`
-                    : (d.error ? `错误: ${d.error.substring(0, 60)}` : '未找到匹配');
-                let resultDetail = d.summary || '';
-                if (d.cheapest) {
-                    resultDetail += `\n最便宜: ${d.cheapest.platform_name || ''} ¥${d.cheapest.platform_price || ''}`;
-                }
-                reasoningNodes.push({
-                    type: d.found ? 'observation' : 'warning',
-                    title: `${resultIcon} ${d.tool}: ${resultTitle}`,
-                    detail: resultDetail,
-                    elapsedMs: null,
-                });
-                break;
-
-            case 'reflection':
-                reasoningNodes.push({
-                    type: 'warning', title: `反思: ${d.action}`,
-                    detail: `工具: ${d.tool}\n重试次数: ${d.retry_count}\n决策: ${d.reasoning || ''}`,
-                    elapsedMs: null,
-                });
-                break;
-
-            case 'synthesize_start':
-                reasoningNodes.push({
-                    type: 'plan', title: 'Phase 3: 综合分析',
-                    detail: `模型: ${d.model || ''}`,
-                    elapsedMs: null,
-                });
-                break;
-
-            case 'synthesize_end':
-                reasoningNodes.push({
-                    type: 'observation', title: '综合完成',
-                    detail: `生成 ${d.char_count || 0} 字符\n模型: ${d.model || ''}`,
-                    elapsedMs: null,
-                });
-                break;
-
-            case 'shopping_phase':
-                reasoningNodes.push({
-                    type: 'phase', title: `M5: ${d.from_phase} → ${d.phase}`,
-                    detail: '',
-                    elapsedMs: null,
-                });
-                break;
-
-            case 'slot_filled':
-                reasoningNodes.push({
-                    type: 'slot', title: `槽位: ${d.slot} = ${d.value}`,
-                    detail: `阶段: ${d.phase || ''}`,
-                    elapsedMs: null,
-                });
-                break;
-
-            case 'error':
-                reasoningNodes.push({
-                    type: 'error', title: `错误: ${d.context || ''}`,
-                    detail: d.message || '',
-                    elapsedMs: null,
-                });
-                break;
-
-            default:
-                // 未知事件类型跳过
-                break;
-        }
-    }
-
     renderTimeline();
 }
 
