@@ -1317,6 +1317,271 @@ body {
 }
 
 /* ============================================================
+   L4: 调试仪表盘
+   ============================================================ */
+
+.debug-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.debug-toolbar {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+  flex-shrink: 0;
+}
+
+.debug-section-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 8px;
+  flex-shrink: 0;
+}
+
+/* Trace 列表 */
+.trace-list {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.trace-item {
+  position: relative;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: background .12s, border-color .12s;
+}
+.trace-item:hover {
+  background: var(--bg-input);
+  border-color: var(--brand-border);
+}
+
+.trace-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 3px;
+}
+
+.trace-item-query {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+}
+
+.trace-item-meta {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+  margin-left: 8px;
+}
+
+.trace-item-preview {
+  font-size: 11px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.trace-item-delete {
+  position: absolute;
+  top: 4px; right: 6px;
+  opacity: 0;
+  background: none; border: none;
+  color: var(--text-tertiary); font-size: 14px;
+  cursor: pointer; padding: 2px 4px;
+  transition: opacity .15s, color .15s;
+}
+.trace-item:hover .trace-item-delete { opacity: .6; }
+.trace-item-delete:hover { color: var(--error); opacity: 1 !important; }
+
+/* 回放控制栏 */
+.playback-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 10px;
+  flex-shrink: 0;
+}
+
+.playback-counter {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  color: var(--text-primary);
+  min-width: 60px;
+  text-align: center;
+}
+
+.playback-speed {
+  font-size: 11px;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.playback-speed select {
+  font-size: 11px;
+  padding: 2px 4px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+}
+
+/* 回放时间线 */
+.playback-timeline {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.pb-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: var(--radius-sm);
+  transition: background .15s;
+  opacity: 0.35;
+}
+.pb-row.past { opacity: 0.7; }
+.pb-row.active {
+  opacity: 1;
+  background: var(--brand-bg);
+  border: 1px solid var(--brand-border);
+}
+
+.pb-dot {
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  flex-shrink: 0;
+  border: 2px solid #FFF;
+  box-shadow: var(--shadow-sm);
+  transition: transform .2s;
+}
+.pb-row.active .pb-dot { transform: scale(1.2); }
+
+.pb-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pb-title {
+  font-size: 11px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pb-row.active .pb-title {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.pb-active-marker {
+  font-size: 10px;
+  color: var(--brand);
+  font-weight: 600;
+  animation: fadeSlideIn .3s ease-out;
+}
+
+.pb-meta {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  font-family: 'JetBrains Mono', monospace;
+  flex-shrink: 0;
+}
+
+/* 性能摘要卡片 */
+.playback-perf {
+  flex-shrink: 0;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.perf-card {
+  background: var(--bg-input);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+}
+
+.perf-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+
+.perf-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 12px;
+}
+
+.perf-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.perf-label {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.perf-value {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-family: 'JetBrains Mono', monospace;
+}
+.perf-value.small {
+  font-size: 10px;
+  font-weight: 400;
+  font-family: 'Noto Sans SC', sans-serif;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+.perf-chip {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  font-size: 10px;
+  color: var(--text-secondary);
+}
+
+/* ============================================================
    响应式微调
    ============================================================ */
 

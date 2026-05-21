@@ -1068,6 +1068,261 @@ async function loadQuickProducts() {
     } catch (e) { console.error(e); }
 }
 
+// ══════════════════════════════════════════════════════════════════
+// L4: 调试仪表盘 — Trace 回放与性能分析
+// ══════════════════════════════════════════════════════════════════
+
+let playbackTrace = null;       // 当前回放的 trace 数据
+let playbackIndex = 0;          // 当前回放位置
+let playbackTimer = null;       // 自动播放定时器
+let playbackSpeed = 1000;       // 播放间隔 ms
+
+async function loadTraceList() {
+    const container = document.getElementById('traceList');
+    container.innerHTML = '<p class="small">加载中...</p>';
+    try {
+        const resp = await fetch('/api/traces');
+        const data = await resp.json();
+        if (!data.success || !data.traces || data.traces.length === 0) {
+            container.innerHTML = '<p class="text-muted small">暂无保存的 Trace。发送一条消息后会自动保存。</p>';
+            return;
+        }
+        container.innerHTML = data.traces.map((t, i) => `
+            <div class="trace-item" onclick="loadTraceForPlayback('${escapeHtml(t.filename)}')">
+                <div class="trace-item-header">
+                    <span class="trace-item-query">${escapeHtml(t.query || '(空查询)')}</span>
+                    <span class="trace-item-meta">${t.event_count} 事件 · ${t.timestamp}</span>
+                </div>
+                <div class="trace-item-preview">${escapeHtml(t.answer_preview || '')}</div>
+                <button class="trace-item-delete"
+                    onclick="event.stopPropagation();deleteTraceFile('${escapeHtml(t.filename)}')">×</button>
+            </div>
+        `).join('');
+    } catch (e) {
+        container.innerHTML = '<p class="text-danger small">加载失败</p>';
+    }
+}
+
+function stopPlayback() {
+    if (playbackTimer) { clearInterval(playbackTimer); playbackTimer = null; }
+}
+
+function closePlayback() {
+    stopPlayback();
+    document.getElementById('tracePlaybackSection').style.display = 'none';
+    document.getElementById('traceListSection').style.display = 'block';
+}
+
+async function loadTraceForPlayback(filename) {
+    try {
+        const resp = await fetch(`/api/traces/${encodeURIComponent(filename)}`);
+        const data = await resp.json();
+        if (!data.success) { alert('加载失败: ' + data.error); return; }
+
+        playbackTrace = data.trace;
+        playbackIndex = -1;
+        stopPlayback();
+
+        document.getElementById('traceListSection').style.display = 'none';
+        document.getElementById('tracePlaybackSection').style.display = 'block';
+        document.getElementById('playbackQuery').textContent =
+            (playbackTrace.meta && playbackTrace.meta.query) || filename;
+
+        // 渲染性能摘要
+        renderPerformanceSummary(playbackTrace.events || []);
+
+        // 渲染完整时间线
+        renderPlaybackTimeline(-1);
+        updatePlaybackCounter();
+
+        // 切换到 Debug Tab
+        const debugTab = document.getElementById('debug-tab');
+        if (debugTab) bootstrap.Tab.getOrCreateInstance(debugTab).show();
+
+    } catch (e) {
+        console.error('加载 trace 失败:', e);
+    }
+}
+
+function renderPlaybackTimeline(activeIdx) {
+    const container = document.getElementById('playbackTimeline');
+    const events = playbackTrace ? (playbackTrace.events || []) : [];
+
+    if (events.length === 0) {
+        container.innerHTML = '<p class="text-muted small">无事件</p>';
+        return;
+    }
+
+    container.innerHTML = events.map((ev, i) => {
+        const node = mapEventToNode(ev);
+        if (!node) return '';
+        const isActive = i === activeIdx;
+        const isPast = i < activeIdx;
+        const dotColor = isActive ? 'var(--brand)' : (isPast ? 'var(--success)' : '#94A3B8');
+        const rowCls = isActive ? 'pb-row active' : (isPast ? 'pb-row past' : 'pb-row');
+        const icon = NODE_ICONS[node.type] || '●';
+        const label = NODE_LABELS[node.type] || node.type;
+
+        return `
+            <div class="${rowCls}" id="pbRow${i}">
+                <div class="pb-dot" style="background:${dotColor}">${icon}</div>
+                <div class="pb-info">
+                    <span class="pb-title">${label} · ${escapeHtml(node.title)}</span>
+                    ${isActive ? '<span class="pb-active-marker">◀ 当前</span>' : ''}
+                </div>
+                <span class="pb-meta">${node.elapsedMs ? node.elapsedMs + 'ms' : ''}</span>
+            </div>`;
+    }).join('');
+
+    // 滚动到当前
+    if (activeIdx >= 0) {
+        const row = document.getElementById('pbRow' + activeIdx);
+        if (row) row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+}
+
+function updatePlaybackCounter() {
+    const total = playbackTrace ? (playbackTrace.events || []).length : 0;
+    document.getElementById('playbackCounter').textContent =
+        `${Math.max(0, playbackIndex + 1)} / ${total}`;
+
+    const btn = document.getElementById('playbackPlayBtn');
+    if (btn) btn.textContent = playbackTimer ? '⏸' : '▶';
+}
+
+function playbackToggle() {
+    if (playbackTimer) {
+        stopPlayback();
+        updatePlaybackCounter();
+        return;
+    }
+    // 如果已播完，从头开始
+    const total = playbackTrace ? (playbackTrace.events || []).length : 0;
+    if (playbackIndex >= total - 1) playbackIndex = -1;
+
+    playbackTimer = setInterval(() => {
+        const total = playbackTrace ? (playbackTrace.events || []).length : 0;
+        if (playbackIndex >= total - 1) {
+            stopPlayback();
+            updatePlaybackCounter();
+            return;
+        }
+        playbackStep(1);
+    }, playbackSpeed);
+    updatePlaybackCounter();
+}
+
+function playbackStep(direction) {
+    if (!playbackTrace) return;
+    const events = playbackTrace.events || [];
+    if (events.length === 0) return;
+
+    playbackIndex = Math.max(-1, Math.min(events.length - 1, playbackIndex + direction));
+    renderPlaybackTimeline(playbackIndex);
+    updatePlaybackCounter();
+}
+
+function playbackSetSpeed(speed) {
+    playbackSpeed = parseInt(speed) || 1000;
+    if (playbackTimer) {
+        stopPlayback();
+        playbackToggle();  // 以新速度重启
+    }
+}
+
+function renderPerformanceSummary(events) {
+    const container = document.getElementById('playbackPerf');
+
+    // 计算各阶段耗时
+    let planTime = 0, toolTime = 0, synthTime = 0, totalEvents = events.length;
+    let eventTypes = {};
+    let modelUsage = {};
+
+    events.forEach(ev => {
+        const d = ev.data || {};
+        // 事件类型统计
+        eventTypes[ev.type] = (eventTypes[ev.type] || 0) + 1;
+
+        // 模型使用统计
+        if (d.model) {
+            modelUsage[d.model] = (modelUsage[d.model] || 0) + 1;
+        }
+
+        // 耗时累计
+        if (ev.type === 'step_end' && d.elapsed_ms) {
+            toolTime += d.elapsed_ms;
+        }
+    });
+
+    // 从时间戳估算 LLM 时间
+    if (events.length >= 2) {
+        const firstTs = events[0].ts || 0;
+        const lastTs = events[events.length - 1].ts || 0;
+        const totalWall = Math.round((lastTs - firstTs) * 1000);
+        if (totalWall > 0 && toolTime < totalWall) {
+            planTime = Math.round((totalWall - toolTime) * 0.3);
+            synthTime = Math.round((totalWall - toolTime) * 0.7);
+        }
+    }
+
+    const modelList = Object.entries(modelUsage).map(([m, c]) =>
+        `<span class="perf-chip">${escapeHtml(m)} (${c})</span>`
+    ).join('') || '<span class="text-muted">无</span>';
+
+    const typeList = Object.entries(eventTypes).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([t, c]) =>
+        `<span class="perf-chip">${escapeHtml(t)}: ${c}</span>`
+    ).join('');
+
+    container.innerHTML = `
+        <div class="perf-card">
+            <div class="perf-title">📊 性能摘要</div>
+            <div class="perf-grid">
+                <div class="perf-item">
+                    <span class="perf-label">总事件数</span>
+                    <span class="perf-value">${totalEvents}</span>
+                </div>
+                <div class="perf-item">
+                    <span class="perf-label">工具耗时</span>
+                    <span class="perf-value">${toolTime}ms</span>
+                </div>
+                <div class="perf-item">
+                    <span class="perf-label">事件类型</span>
+                    <span class="perf-value small">${typeList}</span>
+                </div>
+                <div class="perf-item">
+                    <span class="perf-label">使用模型</span>
+                    <span class="perf-value small">${modelList}</span>
+                </div>
+            </div>
+        </div>`;
+}
+
+async function deleteTraceFile(filename) {
+    if (!confirm('删除这条 Trace？')) return;
+    try {
+        await fetch(`/api/traces/${encodeURIComponent(filename)}`, { method: 'DELETE' });
+        loadTraceList();
+    } catch (e) {
+        console.error('删除失败:', e);
+    }
+}
+
+async function clearAllTraces() {
+    if (!confirm('确定要删除所有 Trace 文件？此操作不可撤销。')) return;
+    try {
+        const resp = await fetch('/api/traces');
+        const data = await resp.json();
+        if (data.traces) {
+            for (const t of data.traces) {
+                await fetch(`/api/traces/${encodeURIComponent(t.filename)}`, { method: 'DELETE' });
+            }
+        }
+        loadTraceList();
+    } catch (e) {
+        console.error('清空失败:', e);
+    }
+}
+
 // ── 初始化 ────────────────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -1076,4 +1331,6 @@ document.addEventListener('DOMContentLoaded', () => {
     loadPlatformProducts('jd');
     document.getElementById('addProductForm').addEventListener('submit', handleAddProduct);
     document.getElementById('saveEditProductBtn').addEventListener('click', saveEditProduct);
+    // L4: 初始化时加载 trace 列表
+    loadTraceList();
 });

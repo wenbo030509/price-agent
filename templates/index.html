@@ -103,6 +103,8 @@
                             data-bs-target="#compare">多平台比价</button></li>
                     <li class="nav-item"><button class="nav-link" id="reasoning-tab" data-bs-toggle="tab"
                             data-bs-target="#reasoning">推理过程</button></li>
+                    <li class="nav-item"><button class="nav-link" id="debug-tab" data-bs-toggle="tab"
+                            data-bs-target="#debug">🔬 调试</button></li>
                 </ul>
 
                 <div class="tab-content" id="myTabContent">
@@ -230,6 +232,51 @@
                     <div class="tab-pane fade" id="reasoning">
                         <div id="reasoningContent">
                             <p class="text-muted">发送问题后，推理过程将显示在这里...</p>
+                        </div>
+                    </div>
+
+                    <!-- L4: 调试仪表盘 — Trace 录制/回放 -->
+                    <div class="tab-pane fade" id="debug">
+                        <div id="debugContent" class="debug-panel">
+                            <!-- 工具栏 -->
+                            <div class="debug-toolbar">
+                                <button class="btn-sm" onclick="loadTraceList()" title="刷新列表">🔄 刷新</button>
+                                <button class="btn-sm btn-danger" onclick="clearAllTraces()" title="删除全部">🗑 清空</button>
+                            </div>
+                            <!-- Trace 列表 -->
+                            <div id="traceListSection">
+                                <h6 class="debug-section-title">已保存的 Trace 记录</h6>
+                                <div id="traceList" class="trace-list">
+                                    <p class="text-muted small">发送消息后，Trace 自动保存。点击加载回放...</p>
+                                </div>
+                            </div>
+                            <!-- 回放区域 -->
+                            <div id="tracePlaybackSection" style="display:none;">
+                                <h6 class="debug-section-title">
+                                    回放: <span id="playbackQuery"></span>
+                                    <button class="btn-sm" style="float:right;" onclick="closePlayback()">✕</button>
+                                </h6>
+                                <!-- 控制栏 -->
+                                <div class="playback-controls">
+                                    <button class="btn-sm" onclick="playbackStep(-1)" title="上一步">⏮</button>
+                                    <button class="btn-sm" id="playbackPlayBtn" onclick="playbackToggle()">▶</button>
+                                    <button class="btn-sm" onclick="playbackStep(1)" title="下一步">⏭</button>
+                                    <span class="playback-counter" id="playbackCounter">0 / 0</span>
+                                    <label class="playback-speed">
+                                        速度:
+                                        <select id="playbackSpeed" onchange="playbackSetSpeed(this.value)">
+                                            <option value="2000">0.5x</option>
+                                            <option value="1000" selected>1x</option>
+                                            <option value="500">2x</option>
+                                            <option value="200">5x</option>
+                                        </select>
+                                    </label>
+                                </div>
+                                <!-- 回放时间线 -->
+                                <div id="playbackTimeline" class="playback-timeline"></div>
+                                <!-- 性能摘要 -->
+                                <div id="playbackPerf" class="playback-perf"></div>
+                            </div>
                         </div>
                     </div>
                 </div>

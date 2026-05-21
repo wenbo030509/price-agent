@@ -316,6 +316,8 @@ def chat_stream():
 
         if final_answer:
             add_message(db, session_id, 'assistant', final_answer)
+            # L4: 自动保存 trace 到文件
+            _save_trace(session_id, agent_message, agent.trace, final_answer)
 
     return Response(
         stream_with_context(generate()),
@@ -326,6 +328,97 @@ def chat_stream():
             'Connection': 'keep-alive',
         }
     )
+
+
+# ── L4: Trace 录制 API ────────────────────────────────────────────────
+
+TRACE_DIR = os.path.join(os.path.dirname(__file__), "eval", "results", "traces")
+os.makedirs(TRACE_DIR, exist_ok=True)
+
+
+def _save_trace(session_id: str, query: str, trace, answer: str):
+    """将 trace 事件和元数据保存为 JSON 文件"""
+    try:
+        ts = __import__('time').strftime("%Y%m%dT%H%M%S")
+        sid_short = session_id[:8]
+        filename = f"trace_{ts}_{sid_short}.json"
+        filepath = os.path.join(TRACE_DIR, filename)
+
+        payload = {
+            "meta": {
+                "query": query,
+                "session_id": session_id,
+                "timestamp": ts,
+                "answer": answer[:500],
+            },
+            "events": trace.to_list(),
+        }
+
+        with open(filepath, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"[L4] Trace 保存失败: {e}")
+
+
+@app.route('/api/traces', methods=['GET'])
+def list_traces():
+    """列出所有已保存的 trace 文件（元数据摘要）"""
+    traces = []
+    if os.path.isdir(TRACE_DIR):
+        for fname in sorted(os.listdir(TRACE_DIR), reverse=True):
+            if not fname.endswith(".json"):
+                continue
+            fpath = os.path.join(TRACE_DIR, fname)
+            try:
+                with open(fpath, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                meta = data.get("meta", {})
+                event_count = len(data.get("events", []))
+                traces.append({
+                    "filename": fname,
+                    "query": meta.get("query", "")[:120],
+                    "session_id": meta.get("session_id", ""),
+                    "timestamp": meta.get("timestamp", ""),
+                    "event_count": event_count,
+                    "answer_preview": meta.get("answer", "")[:100],
+                })
+            except Exception:
+                traces.append({
+                    "filename": fname,
+                    "query": "(读取失败)",
+                    "session_id": "", "timestamp": "", "event_count": 0, "answer_preview": "",
+                })
+    return jsonify({"success": True, "traces": traces})
+
+
+@app.route('/api/traces/<filename>', methods=['GET'])
+def get_trace(filename):
+    """获取单个 trace 文件的完整内容"""
+    # 安全检查：只允许 .json 文件
+    if not filename.endswith(".json") or ".." in filename or "/" in filename:
+        return jsonify({"success": False, "error": "无效的文件名"}), 400
+
+    fpath = os.path.join(TRACE_DIR, filename)
+    if not os.path.isfile(fpath):
+        return jsonify({"success": False, "error": "文件不存在"}), 404
+
+    with open(fpath, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    return jsonify({"success": True, "trace": data})
+
+
+@app.route('/api/traces/<filename>', methods=['DELETE'])
+def delete_trace(filename):
+    """删除单个 trace 文件"""
+    if not filename.endswith(".json") or ".." in filename or "/" in filename:
+        return jsonify({"success": False, "error": "无效的文件名"}), 400
+
+    fpath = os.path.join(TRACE_DIR, filename)
+    if not os.path.isfile(fpath):
+        return jsonify({"success": False, "error": "文件不存在"}), 404
+
+    os.remove(fpath)
+    return jsonify({"success": True})
 
 
 @app.route('/api/platforms', methods=['GET'])
