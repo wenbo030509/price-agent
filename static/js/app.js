@@ -1331,6 +1331,12 @@ document.addEventListener('DOMContentLoaded', () => {
     loadPlatformProducts('jd');
     document.getElementById('addProductForm').addEventListener('submit', handleAddProduct);
     document.getElementById('saveEditProductBtn').addEventListener('click', saveEditProduct);
-    // L4: 初始化时加载 trace 列表
-    loadTraceList();
+
+    // L4: Debug Tab 每次切换时自动刷新 trace 列表
+    const debugTab = document.getElementById('debug-tab');
+    if (debugTab) {
+        debugTab.addEventListener('shown.bs.tab', () => {
+            loadTraceList();
+        });
+    }
 });
