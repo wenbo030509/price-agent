@@ -726,9 +726,11 @@ body {
   color: var(--text-primary);
   padding: 18px 14px 88px;
   height: 100vh;
+  width: 280px;
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  transition: all .3s ease;
+  transition: width .3s ease, padding .3s ease, border .3s ease;
   overflow: hidden;
   border-right: 1px solid var(--border);
 }
@@ -740,6 +742,7 @@ body {
   margin-bottom: 14px;
   flex-shrink: 0;
   padding: 0 2px;
+  white-space: nowrap;
 }
 
 .sidebar-header-title {
@@ -750,14 +753,39 @@ body {
   letter-spacing: 0.03em;
 }
 
+/* 收起按钮 — 平时在 header 右侧，收起时浮在左边缘 */
 .sidebar-toggle-btn {
   background: none; border: none;
   color: var(--text-tertiary);
   font-size: 13px; cursor: pointer;
   padding: 2px 4px;
-  transition: color .15s;
+  transition: all .15s;
+  z-index: 10;
 }
-.sidebar-toggle-btn:hover { color: var(--text-secondary); }
+.sidebar-toggle-btn:hover { color: var(--brand); }
+
+/* 折叠后浮在聊天区左边缘 */
+.sidebar-toggle-btn.floating {
+  position: fixed;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 28px; height: 56px;
+  border-radius: 0 8px 8px 0;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-left: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--shadow-md);
+  font-size: 12px;
+  padding: 0;
+}
+.sidebar-toggle-btn.floating:hover {
+  color: var(--brand);
+  background: var(--bg-input);
+}
 
 /* 搜索框 */
 .sidebar-search {
@@ -866,22 +894,13 @@ body {
 .sidebar-new-btn:active { transform: scale(.98); }
 .sidebar-new-btn .btn-icon { font-size: 18px; font-weight: 300; line-height: 1; }
 
-/* 折叠状态 */
+/* 折叠状态 — 侧边栏完全缩进，聊天区自动填充 */
 .sidebar.collapsed {
-  padding: 18px 6px 88px;
+  width: 0;
+  padding: 0;
+  border-right: none;
+  overflow: hidden;
 }
-.sidebar.collapsed .sidebar-header-title,
-.sidebar.collapsed .sidebar-search,
-.sidebar.collapsed .session-info,
-.sidebar.collapsed .sidebar-new-btn span { display: none; }
-.sidebar.collapsed .sidebar-new-btn {
-  left: 6px; right: 6px; padding: 10px 4px; font-size: 18px;
-}
-.sidebar.collapsed .sidebar-toggle-btn { margin: 0 auto; }
-.sidebar.collapsed .session-item {
-  justify-content: center; padding: 12px 4px; min-height: auto;
-}
-.sidebar.collapsed .session-delete { display: none; }
 
 /* ============================================================
    7. 欢迎空状态
@@ -965,6 +984,8 @@ body {
   height: 100vh;
   background: var(--bg-page);
   position: relative;
+  flex: 1;
+  min-width: 0;
 }
 
 .chat-header {
@@ -1076,6 +1097,8 @@ body {
 
 .right-panel {
   height: 100vh;
+  width: 360px;
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
   background: var(--bg-card);

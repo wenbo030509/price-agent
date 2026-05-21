@@ -13,10 +13,10 @@
             <!-- ============================================================
                  6. 左侧边栏 — 会话历史（重构版）
                  ============================================================ -->
-            <div class="col-md-3 sidebar" id="sidebar">
+            <div class="sidebar" id="sidebar">
                 <div class="sidebar-header">
                     <div class="sidebar-header-title">会话历史</div>
-                    <button class="sidebar-toggle-btn" onclick="toggleSidebar()">
+                    <button class="sidebar-toggle-btn" id="sidebarToggleBtn" onclick="toggleSidebar()">
                         <span id="sidebarToggleIcon">◀</span>
                     </button>
                 </div>
@@ -40,7 +40,7 @@
             <!-- ============================================================
                  聊天区域
                  ============================================================ -->
-            <div class="col-md-6 chat-area" id="chatArea">
+            <div class="chat-area" id="chatArea">
                 <div class="chat-header">
                     <div class="chat-header-title">Price Agent</div>
                 </div>
@@ -95,7 +95,7 @@
             <!-- ============================================================
                  右侧面板
                  ============================================================ -->
-            <div class="col-md-3 right-panel" id="rightPanel">
+            <div class="right-panel" id="rightPanel">
                 <ul class="nav nav-tabs mb-3" id="myTab" role="tablist">
                     <li class="nav-item"><button class="nav-link active" id="products-tab" data-bs-toggle="tab"
                             data-bs-target="#products">商品管理</button></li>

@@ -300,21 +300,16 @@ function toggleTimelineNode(index) {
 function toggleSidebar() {
     sidebarCollapsed = !sidebarCollapsed;
     const sidebar = document.getElementById('sidebar');
-    const chatArea = document.getElementById('chatArea');
-    const rightPanel = document.getElementById('rightPanel');
+    const toggleBtn = document.getElementById('sidebarToggleBtn');
     const icon = document.getElementById('sidebarToggleIcon');
 
     if (sidebarCollapsed) {
         sidebar.classList.add('collapsed');
-        sidebar.classList.remove('col-md-3'); sidebar.classList.add('col-md-1');
-        chatArea.classList.remove('col-md-6'); chatArea.classList.add('col-md-7');
-        rightPanel.classList.remove('col-md-3'); rightPanel.classList.add('col-md-4');
+        toggleBtn.classList.add('floating');
         icon.textContent = '▶';
     } else {
         sidebar.classList.remove('collapsed');
-        sidebar.classList.add('col-md-3'); sidebar.classList.remove('col-md-1');
-        chatArea.classList.add('col-md-6'); chatArea.classList.remove('col-md-7');
-        rightPanel.classList.add('col-md-3'); rightPanel.classList.remove('col-md-4');
+        toggleBtn.classList.remove('floating');
         icon.textContent = '◀';
     }
 }
