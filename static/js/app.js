@@ -369,9 +369,6 @@ async function loadSessions() {
         if (data.success) {
             allSessions = data.sessions;
             renderSessions(data.sessions);
-            if (data.sessions.length > 0 && !currentSessionId) {
-                switchSession(data.sessions[0].session_id);
-            }
         }
     } catch (e) { console.error('加载会话失败:', e); }
 }
@@ -1361,6 +1358,9 @@ document.addEventListener('DOMContentLoaded', () => {
     loadPlatformProducts('jd');
     document.getElementById('addProductForm').addEventListener('submit', handleAddProduct);
     document.getElementById('saveEditProductBtn').addEventListener('click', saveEditProduct);
+
+    // 默认显示商品管理 Tab（类似新建会话后的页面）
+    switchRightTab('products-tab');
 
     // L4: Debug Tab 每次切换时自动刷新 trace 列表
     const debugTab = document.getElementById('debug-tab');
