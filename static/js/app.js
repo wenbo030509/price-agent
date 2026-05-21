@@ -370,8 +370,13 @@ async function sendMessage() {
                 const jsonStr = trimmed.substring(6);
                 try {
                     const ev = JSON.parse(jsonStr);
-                    if (ev.type === 'done') {
+                    if (ev.type === 'session') {
+                        currentSessionId = (ev.data && ev.data.session_id) || currentSessionId;
+                    } else if (ev.type === 'done') {
                         finalAnswer = (ev.data && ev.data.answer) || '';
+                    } else if (ev.type === 'error') {
+                        reasoningNodes.push({ type: 'error', title: '服务端错误', detail: (ev.data && ev.data.message) || '', elapsedMs: null });
+                        renderTimeline();
                     } else {
                         addTraceEvent(ev);
                     }

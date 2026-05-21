@@ -4,6 +4,7 @@ import uuid
 import sys
 import io
 import os
+import json
 import base64
 
 from config import Settings
@@ -296,6 +297,10 @@ def chat_stream():
     ]
 
     def generate():
+        # 先发送 session_id，确保前端能同步新创建的会话
+        init_event = json.dumps({"type": "session", "data": {"session_id": session_id}}, ensure_ascii=False)
+        yield f"data: {init_event}\n\n"
+
         final_answer = ""
         try:
             for ev in agent.run_stream(agent_message, history=history_for_agent, verbose=True):
@@ -304,6 +309,8 @@ def chat_stream():
                 if ev.type == "done":
                     final_answer = ev.data.get("answer", "")
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             err = json.dumps({"type": "error", "data": {"message": str(e)}}, ensure_ascii=False)
             yield f"data: {err}\n\n"
 
