@@ -1,10 +1,13 @@
 import json
 import re
+import time
+import threading
 import concurrent.futures
 from dataclasses import dataclass, field
-from typing import Dict, List, Callable, Optional
+from typing import Dict, List, Callable, Optional, Generator
 from openai import OpenAI
 from .prompts import SYSTEM_PROMPT, PLAN_PROMPT_TEMPLATE
+from .trace import TraceCollector, TraceEvent, EventType
 
 
 # ── 意图分类触发词 ──────────────────────────────────────────────────────────
@@ -114,6 +117,9 @@ class ReActAgent:
         # M5: 购物上下文
         self.shopping_context = ShoppingContext()
 
+        # Trace 事件收集器（推理可视化）
+        self.trace = TraceCollector()
+
     # ── 入口 ──────────────────────────────────────────────────────────
 
     def run(
@@ -128,10 +134,13 @@ class ReActAgent:
         - comparison：Plan-Execute
         - query：ReAct
         """
+        self.trace.reset()
+
         if history:
             history = self._slide_window(history)
 
         intent = self._detect_intent(user_query)
+        self.trace.intent(intent=intent, query=user_query, model_count=self._count_models(user_query))
 
         # M5: 检测购物中途退出
         if self.shopping_context.phase != "greeting" and intent != "shopping":
@@ -139,22 +148,52 @@ class ReActAgent:
                 self.shopping_context.reset()
 
         if intent == "recommendation":
+            self.trace.mode_select(mode="react", reason="推荐型查询，启用语义推荐模式", model=self.model_react)
             if verbose:
                 print(f"\n[Intent: recommendation] 启用语义推荐模式")
             return self._react_loop(user_query, history, verbose, intent_hint="recommendation")
 
         elif intent == "comparison":
+            self.trace.mode_select(mode="plan_execute", reason="对比型查询，启用 Plan-Execute 模式", model=self.model_react)
             if verbose:
                 print(f"\n[Intent: comparison] 启用 Plan-Execute 对比模式")
             return self._plan_and_execute(user_query, history, verbose)
 
         elif intent == "shopping":                                    # M5: 新增
+            self.trace.mode_select(mode="shopping", reason="购物引导模式", model=self.model_react)
             if verbose:
                 print(f"\n[Intent: shopping] 启用引导式购物模式")
             return self._guided_shopping(user_query, history, verbose)
 
         else:  # query
+            self.trace.mode_select(mode="react", reason="简单查询，ReAct 模式", model=self.model_react)
             return self._react_loop(user_query, history, verbose)
+
+    # ── 流式运行 ──────────────────────────────────────────────────────
+
+    def run_stream(
+        self,
+        user_query: str,
+        history: Optional[List[Dict]] = None,
+        verbose: bool = True,
+    ) -> Generator[TraceEvent, None, None]:
+        """在后台线程运行 Agent，yield 实时 TraceEvent 供 SSE 消费"""
+        self.trace.start_stream()
+        answer_container: List[str] = []
+
+        def target():
+            try:
+                answer = self.run(user_query, history, verbose)
+                answer_container.append(answer)
+            except Exception as e:
+                answer_container.append(f"处理出错: {e}")
+            finally:
+                self.trace.finish_stream(answer_container[0] if answer_container else "")
+
+        thread = threading.Thread(target=target, daemon=True)
+        thread.start()
+
+        yield from self.trace.iter_events()
 
     # ── 复杂度判断 ────────────────────────────────────────────────────
 
@@ -270,8 +309,10 @@ class ReActAgent:
     ) -> str:
         """Plan-Execute 主流程"""
 
+        self.trace.plan_start()
         plan = self._generate_plan(user_query, history, verbose)
         if plan is None:
+            self.trace.mode_select(mode="react", reason="LLM 判定为简单查询，回退 ReAct", model=self.model_react)
             if verbose:
                 print(f"[Plan-Execute] LLM 判定为简单 query，回退 ReAct")
             return self._react_loop(user_query, history, verbose)
@@ -323,6 +364,7 @@ class ReActAgent:
                 return None
 
             steps = plan_data.get("plan", [])
+            self.trace.plan_generated(steps=steps, model=self.model_plan)
             if verbose:
                 print(f"[Phase 1] 计划 {len(steps)} 步：")
                 for s in steps:
@@ -361,6 +403,15 @@ class ReActAgent:
             if verbose:
                 print(f"  并行执行 {len(independent)} 个 Step...")
 
+            # Trace: mark all independent steps as starting
+            for step in independent:
+                sn = step["step"]
+                self.trace.step_start(
+                    step_num=sn, tool=step.get("tool", ""),
+                    purpose=step.get("purpose", ""), depends_on=None,
+                    group="independent",
+                )
+
             with concurrent.futures.ThreadPoolExecutor(
                 max_workers=min(len(independent), 4)
             ) as executor:
@@ -376,37 +427,55 @@ class ReActAgent:
 
                 for f in concurrent.futures.as_completed(futures):
                     step = futures[f]
+                    sn = step["step"]
                     try:
-                        results[step["step"]] = f.result(timeout=60)
+                        results[sn] = f.result(timeout=60)
+                        success = "error" not in results[sn]
+                        summary = self._format_step_result(results[sn])
+                        self.trace.step_end(step_num=sn, success=success, summary=summary,
+                                            error=results[sn].get("error", "") if not success else "")
                         if verbose:
-                            status = "✓" if "error" not in results[step["step"]] else "✗"
-                            print(f"  {status} Step {step['step']}: {step['tool']} 完成")
+                            status = "✓" if success else "✗"
+                            print(f"  {status} Step {sn}: {step['tool']} 完成")
                     except Exception as e:
-                        errors[step["step"]] = str(e)
-                        results[step["step"]] = {"error": str(e)}
+                        errors[sn] = str(e)
+                        results[sn] = {"error": str(e)}
+                        self.trace.step_end(step_num=sn, success=False, error=str(e))
                         if verbose:
-                            print(f"  ✗ Step {step['step']}: {step['tool']} 异常 — {e}")
+                            print(f"  ✗ Step {sn}: {step['tool']} 异常 — {e}")
 
         # 有依赖组 → 串行执行（解析 $step{N} 引用后，每个 Step 内部做 mini-ReAct）
         for step in dependent:
             dep = step["depends_on"]
             args = self._resolve_step_refs(step.get("args", {}), results)
+            sn = step["step"]
+
+            self.trace.step_start(
+                step_num=sn, tool=step.get("tool", ""),
+                purpose=step.get("purpose", ""), depends_on=dep,
+                group="dependent",
+            )
 
             if verbose:
-                print(f"  Step {step['step']}: {step['tool']} (依赖 Step {dep})")
+                print(f"  Step {sn}: {step['tool']} (依赖 Step {dep})")
 
             try:
-                results[step["step"]] = self._execute_step_with_react(
+                results[sn] = self._execute_step_with_react(
                     step, args, verbose
                 )
+                success = "error" not in results[sn]
+                summary = self._format_step_result(results[sn])
+                self.trace.step_end(step_num=sn, success=success, summary=summary,
+                                    error=results[sn].get("error", "") if not success else "")
                 if verbose:
-                    status = "✓" if "error" not in results[step["step"]] else "✗"
-                    print(f"  {status} Step {step['step']}: {step['tool']} 完成")
+                    status = "✓" if success else "✗"
+                    print(f"  {status} Step {sn}: {step['tool']} 完成")
             except Exception as e:
-                errors[step["step"]] = str(e)
-                results[step["step"]] = {"error": str(e)}
+                errors[sn] = str(e)
+                results[sn] = {"error": str(e)}
+                self.trace.step_end(step_num=sn, success=False, error=str(e))
                 if verbose:
-                    print(f"  ✗ Step {step['step']}: {step['tool']} 异常 — {e}")
+                    print(f"  ✗ Step {sn}: {step['tool']} 异常 — {e}")
 
         if errors and verbose:
             print(f"  共 {len(errors)} 个 Step 失败")
@@ -437,9 +506,20 @@ class ReActAgent:
             print(f"\n  ── Step {step['step']}: {purpose} ──")
 
         # Round 1: 按 Plan 执行
+        self.trace.tool_call(tool_name=tool_name, args=args, step=step.get("step", 0), round_num=1)
+        t0 = time.time()
         result = self._call_tool_safe(tool_name, args)
+        tool_elapsed = round((time.time() - t0) * 1000)
         round_num = 1
         result_str = self._format_step_result(result)
+        found_r1 = not self._is_empty_result(result) and "error" not in result
+        match_count_r1 = 0
+        if "raw_data" in result:
+            match_count_r1 = result["raw_data"].get("total_matches", 0)
+        self.trace.tool_result(
+            tool_name=tool_name, found=found_r1, match_count=match_count_r1,
+            summary=result_str[:300], step=step.get("step", 0), round_num=1,
+        )
 
         if verbose:
             found_info = ""
@@ -499,6 +579,11 @@ class ReActAgent:
                 decision = {"action": "done", "reasoning": "LLM 调用失败"}
 
             action = decision.get("action", "done")
+            self.trace.reflection(
+                tool_name=tool_name, retry_count=round_num - 1,
+                action=action, reasoning=decision.get("reasoning", ""),
+                step=step.get("step", 0),
+            )
 
             if verbose:
                 print(f"    Round {round_num}: {decision.get('reasoning', action)}")
@@ -506,11 +591,21 @@ class ReActAgent:
             if action in ("retry", "switch_tool"):
                 new_tool = decision.get("tool", tool_name)
                 new_args = decision.get("args", args)
+                self.trace.tool_call(tool_name=new_tool, args=new_args, step=step.get("step", 0), round_num=round_num)
                 try:
+                    t_retry = time.time()
                     result = self._call_tool_safe(new_tool, new_args)
                     result_str = self._format_step_result(result)
+                    retry_found = not self._is_empty_result(result) and "error" not in result
+                    retry_matches = 0
+                    if "raw_data" in result:
+                        retry_matches = result["raw_data"].get("total_matches", 0)
+                    self.trace.tool_result(
+                        tool_name=new_tool, found=retry_found, match_count=retry_matches,
+                        summary=result_str[:300], step=step.get("step", 0), round_num=round_num,
+                    )
 
-                    if not self._is_empty_result(result) and "error" not in result:
+                    if retry_found:
                         if verbose:
                             found_info = ""
                             if "raw_data" in result:
@@ -520,6 +615,10 @@ class ReActAgent:
                             print(f"    ✓ 重试成功{found_info}")
                         return result
                 except Exception as e:
+                    self.trace.tool_result(
+                        tool_name=new_tool, found=False, error=str(e),
+                        step=step.get("step", 0), round_num=round_num,
+                    )
                     if verbose:
                         print(f"    ✗ 重试失败: {e}")
 
@@ -603,6 +702,7 @@ class ReActAgent:
         verbose: bool
     ) -> str:
         """Phase 3: LLM 综合所有 observation 生成最终答案"""
+        self.trace.synthesize_start(model=self.model_synthesize)
         if verbose:
             print(f"\n[Phase 3] 综合分析结果...")
 
@@ -669,10 +769,12 @@ class ReActAgent:
                 max_tokens=1500,
             )
             answer = resp.choices[0].message.content
+            self.trace.synthesize_end(char_count=len(answer), model=self.model_synthesize)
             if verbose:
                 print(f"[Phase 3] 答案生成完成 ({len(answer)} 字符)")
             return answer
         except Exception as e:
+            self.trace.error(message=str(e), context="synthesize")
             if verbose:
                 print(f"[Phase 3] 合成失败: {e}")
             return f"综合分析时出错: {e}\n\n原始查询结果:\n{obs_combined[:1000]}"
@@ -737,6 +839,8 @@ class ReActAgent:
             response_msg = response.choices[0].message
             thoughts = response_msg.content or "正在调用工具获取数据..."
 
+            self.trace.react_round(round_num=round_num + 1, thought=thoughts, model=self.model_react)
+
             if verbose:
                 print(f"\n【Round {round_num + 1} - Thought】{thoughts}")
 
@@ -766,11 +870,13 @@ class ReActAgent:
                 if verbose:
                     print(f"  ├─【Action】{tool_name}({tool_args})")
 
+                t0 = time.time()
                 try:
                     tool_func = self.tool_map[tool_name]
                     observation = tool_func(**tool_args)
                 except Exception as e:
                     observation = {"error": f"工具执行失败：{str(e)}"}
+                tool_elapsed = round((time.time() - t0) * 1000)
 
                 observation_str = json.dumps(observation, ensure_ascii=False, indent=2)
 
@@ -778,6 +884,23 @@ class ReActAgent:
                     print(f"  └─【Observation-{tool_name}】{observation_str[:300]}")
 
                 is_empty = self._is_empty_result(observation)
+
+                # Trace: tool call + result
+                found = not is_empty if not observation.get("error") else False
+                match_count = 0
+                cheapest = None
+                if isinstance(observation, dict) and "raw_data" in observation:
+                    rd = observation["raw_data"]
+                    match_count = rd.get("total_matches", 0)
+                    if rd.get("cheapest"):
+                        cheapest = rd["cheapest"]
+
+                self.trace.tool_call(tool_name=tool_name, args=tool_args, round_num=round_num + 1)
+                self.trace.tool_result(
+                    tool_name=tool_name, found=found, match_count=match_count,
+                    cheapest=cheapest, error=observation.get("error", ""),
+                    summary=observation_str[:300], round_num=round_num + 1,
+                )
 
                 if is_empty:
                     empty_result_count[tool_name] = empty_result_count.get(tool_name, 0) + 1
@@ -803,6 +926,11 @@ class ReActAgent:
             if all_empty and should_reflect:
                 reflection_msg = self._build_reflection_message(
                     reflect_tool_name, reflect_tool_args, reflect_observation, reflect_retry_count
+                )
+                self.trace.reflection(
+                    tool_name=reflect_tool_name, retry_count=reflect_retry_count,
+                    action="retry" if reflect_retry_count <= self.max_reflection_retries else "done",
+                    reasoning=reflection_msg[:200],
                 )
                 if verbose:
                     print(f"【Reflection】{reflection_msg}")
@@ -933,6 +1061,7 @@ class ReActAgent:
 
         # Phase: GREETING
         if ctx.phase == "greeting":
+            self.trace.shopping_phase(phase="slot_filling", from_phase="greeting")
             ctx.phase = "slot_filling"
             self._inject_from_history(history, slots_cfg)
             self._extract_slots_from_query(user_query, slots_cfg)
@@ -940,31 +1069,42 @@ class ReActAgent:
             missing = ctx.get_missing_required(slots_cfg)
             if not missing:
                 ctx.phase = "searching"
+                self.trace.shopping_phase(phase="searching", from_phase="slot_filling")
             else:
                 return self._greet_and_ask(missing, slots_cfg)
 
         # Phase: SLOT_FILLING
         if ctx.phase == "slot_filling":
+            prev_slots = set(ctx.slots.keys())
             self._extract_slots_from_query(user_query, slots_cfg)
+            new_slots = set(ctx.slots.keys()) - prev_slots
+            for s in new_slots:
+                self.trace.slot_filled(slot_name=s, value=ctx.slots.get(s), phase="slot_filling")
+
             ctx.question_count += 1
             missing = ctx.get_missing_required(slots_cfg)
 
             if not missing:
                 ctx.phase = "searching"
+                self.trace.shopping_phase(phase="searching", from_phase="slot_filling")
             elif ctx.question_count >= max_questions:
                 ctx.phase = "searching"
+                self.trace.shopping_phase(phase="searching", from_phase="slot_filling")
             else:
                 optional = [s for s in slots_cfg if not s.get("required") and s["name"] not in ctx.slots]
                 if optional:
                     return self._ask_slot_question(optional[0])
                 ctx.phase = "searching"
+                self.trace.shopping_phase(phase="searching", from_phase="slot_filling")
 
         # Phase: SEARCHING
         if ctx.phase == "searching":
+            self.trace.shopping_phase(phase="searching", from_phase=ctx.phase)
             result = self._search_with_slots(ctx.slots)
             ctx.candidates = result.get("recommendations", [])
             ctx.last_recommendation = result
             ctx.phase = "recommending"
+            self.trace.shopping_phase(phase="recommending", from_phase="searching")
             return self._format_recommendation(result)
 
         # Phase: RECOMMENDING / COMPARING / FOLLOW_UP
@@ -1097,6 +1237,7 @@ class ReActAgent:
 
         # 对比意图
         if any(w in user_query for w in ["对比", "比较", "哪个好", "哪个更", "这两个"]):
+            self.trace.shopping_phase(phase="comparing", from_phase=ctx.phase)
             ctx.phase = "comparing"
             return self._handle_comparison(user_query)
 

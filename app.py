@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify, send_from_directory
+from flask import Flask, render_template, request, jsonify, send_from_directory, Response, stream_with_context
 from flask_cors import CORS
 import uuid
 import sys
@@ -251,20 +251,74 @@ def chat():
         # 运行Agent（传入历史上下文，如果有图片则消息包含图片URL）
         answer = agent.run(agent_message, history=history_for_agent, verbose=True)
 
-        # 获取并解析推理过程
+        # 获取推理过程：结构化 trace（新） + 原始文本（兼容旧前端）
         reasoning_output = buffer.getvalue()
+        trace_data = agent.trace.to_list()
 
         # 保存助手消息
         add_message(db, session_id, 'assistant', answer)
-        
+
         return jsonify({
             "success": True,
             "session_id": session_id,
             "answer": answer,
-            "reasoning": reasoning_output
+            "reasoning": reasoning_output,
+            "trace": trace_data,
         })
     finally:
         sys.stdout = old_stdout
+
+
+@app.route('/api/chat/stream', methods=['POST'])
+def chat_stream():
+    """聊天接口 — SSE 实时流式传输推理过程"""
+    data = request.json
+    user_message = data['message']
+    session_id = data.get('session_id')
+    image_url = data.get('image_url', '')
+
+    if not session_id:
+        session_id = str(uuid.uuid4())
+        create_session(db, session_id)
+
+    agent_message = user_message
+    if image_url:
+        full_url = request.host_url.rstrip("/") + image_url
+        agent_message = f"{user_message}\n[用户上传了商品图片: {full_url}]"
+
+    add_message(db, session_id, 'user', user_message)
+
+    all_history = get_session_messages(db, session_id)
+    history_for_agent = [
+        {"role": msg["role"], "content": msg["content"]}
+        for msg in all_history[:-1]
+        if msg.get("role") in ("user", "assistant") and msg.get("content")
+    ]
+
+    def generate():
+        final_answer = ""
+        try:
+            for ev in agent.run_stream(agent_message, history=history_for_agent, verbose=True):
+                event_json = json.dumps(ev.to_dict(), ensure_ascii=False)
+                yield f"data: {event_json}\n\n"
+                if ev.type == "done":
+                    final_answer = ev.data.get("answer", "")
+        except Exception as e:
+            err = json.dumps({"type": "error", "data": {"message": str(e)}}, ensure_ascii=False)
+            yield f"data: {err}\n\n"
+
+        if final_answer:
+            add_message(db, session_id, 'assistant', final_answer)
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype='text/event-stream',
+        headers={
+            'Cache-Control': 'no-cache',
+            'X-Accel-Buffering': 'no',
+            'Connection': 'keep-alive',
+        }
+    )
 
 
 @app.route('/api/platforms', methods=['GET'])

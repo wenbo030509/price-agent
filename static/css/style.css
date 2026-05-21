@@ -330,9 +330,14 @@ body {
   box-shadow: var(--shadow-sm);
   z-index: 1;
 }
-.timeline-dot.thought  { background: #94A3B8; }  /* 灰色 */
-.timeline-dot.action   { background: var(--brand); } /* 品牌色 */
-.timeline-dot.observation { background: var(--success); } /* 绿色 */
+.timeline-dot.thought       { background: #94A3B8; }
+.timeline-dot.action        { background: var(--brand); }
+.timeline-dot.observation   { background: var(--success); }
+.timeline-dot.plan          { background: #8B5CF6; }
+.timeline-dot.warning       { background: var(--warning); }
+.timeline-dot.error         { background: var(--error); }
+.timeline-dot.phase         { background: #3B82F6; }
+.timeline-dot.slot          { background: #10B981; }
 
 .timeline-header {
   display: flex;
@@ -389,6 +394,24 @@ body {
   border-top: none;
 }
 .timeline-node.expanded .timeline-body { display: block; }
+
+/* 无详情的节点 — 不可展开，header 无 pointer */
+.timeline-node.no-body .timeline-header {
+  cursor: default;
+}
+.timeline-node.no-body .timeline-body {
+  display: none;
+}
+
+/* 错误节点高亮 */
+.timeline-node .timeline-header.error-header {
+  border-left: 3px solid var(--error);
+  background: var(--error-bg);
+}
+.timeline-node .timeline-header.warning-header {
+  border-left: 3px solid var(--warning);
+  background: var(--warning-bg);
+}
 
 /* ============================================================
    6. 会话历史侧边栏（浅色主题，与聊天区协调）

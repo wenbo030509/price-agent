@@ -76,6 +76,22 @@ function clearReasoning() {
     renderTimeline();
 }
 
+const NODE_ICONS = {
+    thought: '🤔', action: '⚡', observation: '👁',
+    plan: '📋', warning: '⚠', error: '✗',
+    phase: '🔄', slot: '📌',
+};
+const NODE_LABELS = {
+    thought: 'Thought', action: 'Action', observation: 'Observation',
+    plan: 'Plan', warning: 'Reflection', error: 'Error',
+    phase: 'Phase', slot: 'Slot',
+};
+const NODE_COLORS = {
+    thought: '#94A3B8', action: 'var(--brand)', observation: 'var(--success)',
+    plan: '#8B5CF6', warning: 'var(--warning)', error: 'var(--error)',
+    phase: '#3B82F6', slot: '#10B981',
+};
+
 function renderTimeline() {
     const container = document.getElementById('reasoningContent');
     if (reasoningNodes.length === 0) {
@@ -83,25 +99,28 @@ function renderTimeline() {
         return;
     }
 
-    const icons = { thought: '🤔', action: '⚡', observation: '👁' };
-    const labels = { thought: 'Thought', action: 'Action', observation: 'Observation' };
-
-    container.innerHTML = `<div class="timeline">${reasoningNodes.map((n, i) => `
-        <div class="timeline-node expanded" id="timelineNode${i}">
-            <div class="timeline-dot ${n.type}">${icons[n.type]}</div>
-            <div class="timeline-header" onclick="toggleTimelineNode(${i})">
+    container.innerHTML = `<div class="timeline">${reasoningNodes.map((n, i) => {
+        const icon = NODE_ICONS[n.type] || '●';
+        const label = NODE_LABELS[n.type] || n.type;
+        const color = NODE_COLORS[n.type] || '#94A3B8';
+        const hasBody = n.detail && n.detail.length > 0;
+        const bodyClass = hasBody ? 'expanded' : 'no-body';
+        return `
+        <div class="timeline-node ${bodyClass}" id="timelineNode${i}">
+            <div class="timeline-dot" style="background:${color}">${icon}</div>
+            <div class="timeline-header" ${hasBody ? `onclick="toggleTimelineNode(${i})"` : ''}>
                 <span class="timeline-title">
-                    <span class="icon">${icons[n.type]}</span>
-                    ${labels[n.type]} · ${escapeHtml(n.title)}
+                    <span class="icon">${icon}</span>
+                    ${label} · ${escapeHtml(n.title)}
                 </span>
                 <span class="timeline-meta">
                     ${n.elapsedMs ? `<span>${n.elapsedMs}ms</span>` : ''}
-                    <span class="timeline-chevron">▶</span>
+                    ${hasBody ? '<span class="timeline-chevron">▶</span>' : ''}
                 </span>
             </div>
-            <div class="timeline-body">${escapeHtml(n.detail)}</div>
+            ${hasBody ? `<div class="timeline-body">${escapeHtml(n.detail)}</div>` : ''}
         </div>
-    `).join('')}</div>`;
+    `}).join('')}</div>`;
 }
 
 function toggleTimelineNode(index) {
@@ -317,44 +336,61 @@ async function sendMessage() {
     container.appendChild(loadingDiv);
     scrollToBottom();
 
-    // 推理模拟步骤
-    const steps = [
-        { type: 'thought', title: '理解用户意图', detail: '分析用户问题，判断是否需要调用工具...' },
-        { type: 'thought', title: '规划执行策略', detail: '根据问题复杂度，选择 ReAct 或 Plan-Execute 模式...' },
-        { type: 'action', title: '执行工具查询', detail: '调用工具查询各平台数据...' },
-        { type: 'observation', title: '获取查询结果', detail: '等待各平台返回数据...' },
-    ];
-    let stepIdx = 0;
-    const stepInterval = setInterval(() => {
-        if (stepIdx < steps.length) {
-            addReasoningNode(steps[stepIdx].type, steps[stepIdx].title, steps[stepIdx].detail, null);
-            stepIdx++;
-        }
-    }, 1200);
+    // 推理面板保持初始空状态，等待 SSE 事件到达后实时填充
 
     try {
-        const resp = await fetch('/api/chat', {
+        const resp = await fetch('/api/chat/stream', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ message, session_id: currentSessionId, image_url: imageUrlToSend || '' })
         });
-        const data = await resp.json();
-        clearInterval(stepInterval);
 
-        if (data.success) {
-            currentSessionId = data.session_id;
-            loadSessions();
-            document.getElementById('loadingMessage').remove();
-            addMessageToChat('assistant', data.answer);
+        if (!resp.ok) {
+            throw new Error(`HTTP ${resp.status}`);
+        }
 
-            // 解析真实推理过程
-            if (data.reasoning) {
-                parseReasoningOutput(data.reasoning);
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let finalAnswer = '';
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            // SSE 数据行: "data: {json}\n\n"
+            const lines = buffer.split('\n\n');
+            // 最后一个可能不完整，保留到下次
+            buffer = lines.pop() || '';
+
+            for (const line of lines) {
+                const trimmed = line.trim();
+                if (!trimmed.startsWith('data: ')) continue;
+                const jsonStr = trimmed.substring(6);
+                try {
+                    const ev = JSON.parse(jsonStr);
+                    if (ev.type === 'done') {
+                        finalAnswer = (ev.data && ev.data.answer) || '';
+                    } else {
+                        addTraceEvent(ev);
+                    }
+                } catch (e) {
+                    // 跳过非 JSON 行
+                }
             }
         }
+
+        // 移除 loading
+        document.getElementById('loadingMessage').remove();
+
+        if (finalAnswer) {
+            addMessageToChat('assistant', finalAnswer);
+        }
+        loadSessions();
+
     } catch (e) {
         console.error('发送失败:', e);
-        clearInterval(stepInterval);
         document.getElementById('loadingMessage').remove();
         addMessageToChat('assistant', '抱歉，发生错误，请稍后重试。');
     }
@@ -383,6 +419,258 @@ function parseReasoningOutput(raw) {
         }
     }
     if (currentNode) reasoningNodes.push(currentNode);
+    renderTimeline();
+}
+
+// ── 结构化 Trace 渲染（L1/L2）───────────────────────────────────
+
+function mapEventToNode(ev) {
+    const d = ev.data || {};
+    switch (ev.type) {
+        case 'intent':
+            return { type: 'thought', title: `意图: ${d.intent}`,
+                     detail: `用户查询: ${d.query || ''}\n检测到 ${d.model_count || 0} 个已知型号`, elapsedMs: null };
+
+        case 'mode_select': {
+            const modeNames = { react: 'ReAct 循环', plan_execute: 'Plan-Execute 策略', shopping: '引导式购物' };
+            return { type: 'plan', title: `模式: ${modeNames[d.mode] || d.mode}`,
+                     detail: `原因: ${d.reason || ''}\n模型: ${d.model || ''}`, elapsedMs: null };
+        }
+
+        case 'plan_generated': {
+            const stepsSummary = (d.steps || []).map(s =>
+                `  Step ${s.step}: ${s.tool}${s.depends_on ? ` (依赖 Step ${s.depends_on})` : ''} — ${s.purpose || ''}`
+            ).join('\n');
+            return { type: 'plan', title: `计划: ${d.step_count} 步`,
+                     detail: `模型: ${d.model || ''}\n${stepsSummary}`, elapsedMs: null };
+        }
+
+        case 'step_start':
+            return { type: 'action', title: `Step ${d.step}: ${d.purpose || d.tool}`,
+                     detail: `工具: ${d.tool}\n依赖: ${d.depends_on ? 'Step ' + d.depends_on : '无（并行）'}\n分组: ${d.group || ''}`, elapsedMs: null };
+
+        case 'step_end': {
+            const icon = d.success ? '✓' : '✗';
+            return { type: d.success ? 'observation' : 'error',
+                     title: `${icon} Step ${d.step} ${d.success ? '完成' : '失败'}`,
+                     detail: `${d.summary || ''}${d.error ? '\n错误: ' + d.error : ''}`,
+                     elapsedMs: d.elapsed_ms || null };
+        }
+
+        case 'react_round':
+            return { type: 'thought', title: `Round ${d.round} · Thought`,
+                     detail: d.thought || '', elapsedMs: null };
+
+        case 'tool_call': {
+            const argsStr = typeof d.args === 'object' ? JSON.stringify(d.args) : String(d.args || '');
+            const where = d.step ? `Step ${d.step} Round ${d.round || 1}` : `Round ${d.round || ''}`;
+            return { type: 'action', title: `${d.tool}`,
+                     detail: `${where}\n参数: ${argsStr}`, elapsedMs: null };
+        }
+
+        case 'tool_result': {
+            const resultIcon = d.found ? '✓' : (d.error ? '✗' : '⚠');
+            const resultTitle = d.found ? `找到 ${d.match_count} 个匹配`
+                : (d.error ? `错误: ${(d.error || '').substring(0, 60)}` : '未找到匹配');
+            let resultDetail = d.summary || '';
+            if (d.cheapest) {
+                resultDetail += `\n最便宜: ${d.cheapest.platform_name || ''} ¥${d.cheapest.platform_price || ''}`;
+            }
+            return { type: d.found ? 'observation' : 'warning',
+                     title: `${resultIcon} ${d.tool}: ${resultTitle}`,
+                     detail: resultDetail, elapsedMs: null };
+        }
+
+        case 'reflection':
+            return { type: 'warning', title: `反思: ${d.action}`,
+                     detail: `工具: ${d.tool}\n重试次数: ${d.retry_count}\n决策: ${d.reasoning || ''}`, elapsedMs: null };
+
+        case 'synthesize_start':
+            return { type: 'plan', title: 'Phase 3: 综合分析',
+                     detail: `模型: ${d.model || ''}`, elapsedMs: null };
+
+        case 'synthesize_end':
+            return { type: 'observation', title: '综合完成',
+                     detail: `生成 ${d.char_count || 0} 字符\n模型: ${d.model || ''}`, elapsedMs: null };
+
+        case 'shopping_phase':
+            return { type: 'phase', title: `M5: ${d.from_phase} → ${d.phase}`,
+                     detail: '', elapsedMs: null };
+
+        case 'slot_filled':
+            return { type: 'slot', title: `槽位: ${d.slot} = ${d.value}`,
+                     detail: `阶段: ${d.phase || ''}`, elapsedMs: null };
+
+        case 'error':
+            return { type: 'error', title: `错误: ${d.context || ''}`,
+                     detail: d.message || '', elapsedMs: null };
+
+        default:
+            return null;
+    }
+}
+
+function addTraceEvent(ev) {
+    const node = mapEventToNode(ev);
+    if (node) {
+        reasoningNodes.push(node);
+        renderTimeline();
+        // 滚动推理面板到底部
+        const content = document.getElementById('reasoningContent');
+        if (content) {
+            requestAnimationFrame(() => { content.scrollTop = content.scrollHeight; });
+        }
+    }
+}
+
+function renderTrace(events) {
+    reasoningNodes = [];
+    for (const ev of events) {
+        const node = mapEventToNode(ev);
+        if (node) reasoningNodes.push(node);
+    }
+    renderTimeline();
+}
+    reasoningNodes = [];
+
+    for (const ev of events) {
+        const d = ev.data || {};
+        switch (ev.type) {
+            case 'intent':
+                reasoningNodes.push({
+                    type: 'thought', title: `意图: ${d.intent}`,
+                    detail: `用户查询: ${d.query || ''}\n检测到 ${d.model_count || 0} 个已知型号`,
+                    elapsedMs: null,
+                });
+                break;
+
+            case 'mode_select':
+                const modeNames = { react: 'ReAct 循环', plan_execute: 'Plan-Execute 策略', shopping: '引导式购物' };
+                reasoningNodes.push({
+                    type: 'plan', title: `模式: ${modeNames[d.mode] || d.mode}`,
+                    detail: `原因: ${d.reason || ''}\n模型: ${d.model || ''}`,
+                    elapsedMs: null,
+                });
+                break;
+
+            case 'plan_generated':
+                const stepsSummary = (d.steps || []).map(s =>
+                    `  Step ${s.step}: ${s.tool}${s.depends_on ? ` (依赖 Step ${s.depends_on})` : ''} — ${s.purpose || ''}`
+                ).join('\n');
+                reasoningNodes.push({
+                    type: 'plan', title: `计划: ${d.step_count} 步`,
+                    detail: `模型: ${d.model || ''}\n${stepsSummary}`,
+                    elapsedMs: null,
+                });
+                break;
+
+            case 'step_start':
+                reasoningNodes.push({
+                    type: 'action', title: `Step ${d.step}: ${d.purpose || d.tool}`,
+                    detail: `工具: ${d.tool}\n依赖: ${d.depends_on ? 'Step ' + d.depends_on : '无（并行）'}\n分组: ${d.group || ''}`,
+                    elapsedMs: null,
+                });
+                break;
+
+            case 'step_end':
+                const icon = d.success ? '✓' : '✗';
+                reasoningNodes.push({
+                    type: d.success ? 'observation' : 'error',
+                    title: `${icon} Step ${d.step} ${d.success ? '完成' : '失败'}`,
+                    detail: `${d.summary || ''}${d.error ? '\n错误: ' + d.error : ''}`,
+                    elapsedMs: d.elapsed_ms || null,
+                });
+                break;
+
+            case 'react_round':
+                reasoningNodes.push({
+                    type: 'thought', title: `Round ${d.round} · Thought`,
+                    detail: d.thought || '',
+                    elapsedMs: null,
+                });
+                break;
+
+            case 'tool_call':
+                const argsStr = typeof d.args === 'object' ? JSON.stringify(d.args) : String(d.args || '');
+                const where = d.step ? `Step ${d.step} Round ${d.round || 1}` : `Round ${d.round || ''}`;
+                reasoningNodes.push({
+                    type: 'action', title: `${d.tool}`,
+                    detail: `${where}\n参数: ${argsStr}`,
+                    elapsedMs: null,
+                });
+                break;
+
+            case 'tool_result':
+                const resultIcon = d.found ? '✓' : (d.error ? '✗' : '⚠');
+                const resultTitle = d.found
+                    ? `找到 ${d.match_count} 个匹配`
+                    : (d.error ? `错误: ${d.error.substring(0, 60)}` : '未找到匹配');
+                let resultDetail = d.summary || '';
+                if (d.cheapest) {
+                    resultDetail += `\n最便宜: ${d.cheapest.platform_name || ''} ¥${d.cheapest.platform_price || ''}`;
+                }
+                reasoningNodes.push({
+                    type: d.found ? 'observation' : 'warning',
+                    title: `${resultIcon} ${d.tool}: ${resultTitle}`,
+                    detail: resultDetail,
+                    elapsedMs: null,
+                });
+                break;
+
+            case 'reflection':
+                reasoningNodes.push({
+                    type: 'warning', title: `反思: ${d.action}`,
+                    detail: `工具: ${d.tool}\n重试次数: ${d.retry_count}\n决策: ${d.reasoning || ''}`,
+                    elapsedMs: null,
+                });
+                break;
+
+            case 'synthesize_start':
+                reasoningNodes.push({
+                    type: 'plan', title: 'Phase 3: 综合分析',
+                    detail: `模型: ${d.model || ''}`,
+                    elapsedMs: null,
+                });
+                break;
+
+            case 'synthesize_end':
+                reasoningNodes.push({
+                    type: 'observation', title: '综合完成',
+                    detail: `生成 ${d.char_count || 0} 字符\n模型: ${d.model || ''}`,
+                    elapsedMs: null,
+                });
+                break;
+
+            case 'shopping_phase':
+                reasoningNodes.push({
+                    type: 'phase', title: `M5: ${d.from_phase} → ${d.phase}`,
+                    detail: '',
+                    elapsedMs: null,
+                });
+                break;
+
+            case 'slot_filled':
+                reasoningNodes.push({
+                    type: 'slot', title: `槽位: ${d.slot} = ${d.value}`,
+                    detail: `阶段: ${d.phase || ''}`,
+                    elapsedMs: null,
+                });
+                break;
+
+            case 'error':
+                reasoningNodes.push({
+                    type: 'error', title: `错误: ${d.context || ''}`,
+                    detail: d.message || '',
+                    elapsedMs: null,
+                });
+                break;
+
+            default:
+                // 未知事件类型跳过
+                break;
+        }
+    }
+
     renderTimeline();
 }
 
