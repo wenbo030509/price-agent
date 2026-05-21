@@ -83,7 +83,8 @@
 
 ### 语义召回（M2）
 - **向量+规则混合检索**：doubao-embedding-vision-251215（2048 维），语义相似度容错
-- **商品 Embedding 预热**：启动时一次性计算并缓存，后续查询只计算 query embedding
+- **商品 Embedding 预热**：启动时计算并持久化到 `embeddings_cache.pkl`，后续启动仅增量更新新增/变更商品（↓74% API 调用）
+- **MD5 指纹检测**：按 `build_product_text` 输出计算指纹，自动识别商品内容变更
 - **功能开关**：`enable_vector_recall` 控制，关闭回退纯规则
 
 ### RAG 知识增强（M3）
