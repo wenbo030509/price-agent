@@ -362,7 +362,8 @@ def _save_trace(session_id: str, query: str, trace, answer: str):
 
 @app.route('/api/traces', methods=['GET'])
 def list_traces():
-    """列出所有已保存的 trace 文件（元数据摘要）"""
+    """列出已保存的 trace 文件，可选按 session_id 过滤"""
+    filter_session = request.args.get("session_id", "").strip()
     traces = []
     if os.path.isdir(TRACE_DIR):
         for fname in sorted(os.listdir(TRACE_DIR), reverse=True):
@@ -373,11 +374,17 @@ def list_traces():
                 with open(fpath, "r", encoding="utf-8") as f:
                     data = json.load(f)
                 meta = data.get("meta", {})
+                sid = meta.get("session_id", "")
+
+                # 按 session_id 过滤
+                if filter_session and sid != filter_session:
+                    continue
+
                 event_count = len(data.get("events", []))
                 traces.append({
                     "filename": fname,
                     "query": meta.get("query", "")[:120],
-                    "session_id": meta.get("session_id", ""),
+                    "session_id": sid,
                     "timestamp": meta.get("timestamp", ""),
                     "event_count": event_count,
                     "answer_preview": meta.get("answer", "")[:100],

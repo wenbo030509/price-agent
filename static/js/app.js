@@ -1080,11 +1080,21 @@ let playbackSpeed = 1000;       // 播放间隔 ms
 async function loadTraceList() {
     const container = document.getElementById('traceList');
     container.innerHTML = '<p class="small">加载中...</p>';
+
+    // 按当前会话过滤 trace
+    let url = '/api/traces';
+    if (currentSessionId) {
+        url += '?session_id=' + encodeURIComponent(currentSessionId);
+    }
+
     try {
-        const resp = await fetch('/api/traces');
+        const resp = await fetch(url);
         const data = await resp.json();
         if (!data.success || !data.traces || data.traces.length === 0) {
-            container.innerHTML = '<p class="text-muted small">暂无保存的 Trace。发送一条消息后会自动保存。</p>';
+            const hint = currentSessionId
+                ? '当前会话暂无 Trace。发送一条消息后会自动保存。'
+                : '请先选择一个会话。';
+            container.innerHTML = `<p class="text-muted small">${hint}</p>`;
             return;
         }
         container.innerHTML = data.traces.map((t, i) => `
