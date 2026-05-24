@@ -12,48 +12,48 @@
         ▼
 ┌─────────────────────────────────────────────────┐
 │              ReActAgent 引擎                      │
-│                                                   │
+│                                                  │
 │  _detect_intent() → 意图分类                       │
 │       │              │              │             │
 │       ▼              ▼              ▼             │
-│  recommendation  comparison    shopping 🆕       │
-│  (语义推荐)     (Plan-Execute) (引导式购物)        │
+│  recommendation  comparison    shopping           │
+│  (语义推荐)     (Plan-Execute) (引导式购物)          │
 │       │              │              │             │
 │       ▼              ▼              ▼             │
-│  _react_loop   _plan_and_     _guided_shopping   │
-│  +intent_hint  execute()      + ShoppingContext  │
-│       │         Phase 1: Plan       │            │
-│       │         Phase 2: mini-ReAct │            │
-│       │         Phase 3: Synthesize │            │
+│  _react_loop   _plan_and_     _guided_shopping    │
+│  +intent_hint  execute()      + ShoppingContext   │
+│       │         Phase 1: Plan       │             │
+│       │         Phase 2: mini-ReAct │             │
+│       │         Phase 3: Synthesize │             │
 │       │              │              │             │
 │       └──────┬───────┴──────┬───────┘             │
 │              ▼              ▼                     │
 │     Self-Reflection  Sliding Window               │
-│     多模型路由                                     │
-└──────────────┬──────────────────────────────────┘
+│     多模型路由                                      │
+└──────────────┬───────────────────────────────────┘
                │
                ▼
 ┌──────────────────────────────────────────────────┐
-│                6 个工具 🆕                          │
+│                6 个工具                           │
 │  - multi_platform_comparison                      │
 │  - query_single_platform                          │
 │  - get_all_platform_products                      │
 │  - search_product_by_image                        │
-│  - semantic_product_search 🆕（向量+规则混合召回）  │
-│  - search_product_knowledge 🆕（RAG 知识检索）     │
-└──────────────┬──────────────────────────────────┘
+│  - semantic_product_search  （向量+规则混合召回）    │
+│  - search_product_knowledge  （RAG 知识检索）      │
+└──────────────┬───────────────────────────────────┘
                │
                ▼
 ┌──────────────────────────────────────────────────┐
-│          PlatformParallelAgent                    │
-│  ThreadPoolExecutor (4 workers)                   │
-│  京东 │ 淘宝 │ 拼多多 │ 苏宁                         │
+│          PlatformParallelAgent                   │
+│  ThreadPoolExecutor (4 workers)                  │
+│  京东 │ 淘宝 │ 拼多多 │ 苏宁                        │
 └──────────────────────────────────────────────────┘
 ```
 
 ## 四种执行模式
 
-| | ReAct | Plan-Execute | 语义推荐 🆕 | 引导式购物 🆕 |
+| | ReAct | Plan-Execute | 语义推荐  | 引导式购物 |
 |---|---|---|---|---|
 | **场景** | 单商品比价 | 多商品对比、混合意图 | 场景/预算/处理器推荐 | 模糊需求、无明确型号 |
 | **触发** | 默认兜底 | 多商品 / 对比词 | 场景词/预算词/处理器词 | "想买个手机""帮我挑" |
