@@ -93,6 +93,7 @@ class ReActAgent:
         self.model_react = cfg.get("model_react", model)        # ReAct 循环（默认模型）
         self.model_plan = cfg.get("model_plan", model)          # Phase 1 计划生成
         self.model_synthesize = cfg.get("model_synthesize", model)  # Phase 3 综合回答
+        self.model_vision = cfg.get("model_vision", model)      # VLM 图片识别模型
 
         self.max_plan_steps = cfg.get("max_plan_steps", 8)
         self.max_history_rounds = cfg.get("max_history_rounds", 6)
@@ -523,7 +524,7 @@ class ReActAgent:
             print(f"\n  ── Step {step['step']}: {purpose} ──")
 
         # Round 1: 按 Plan 执行
-        self.trace.tool_call(tool_name=tool_name, args=args, step=step.get("step", 0), round_num=1)
+        self.trace.tool_call(tool_name=tool_name, args=args, step=step.get("step", 0), round_num=1, model=self._tool_model(tool_name))
         t0 = time.time()
         result = self._call_tool_safe(tool_name, args)
         tool_elapsed = round((time.time() - t0) * 1000)
@@ -608,7 +609,7 @@ class ReActAgent:
             if action in ("retry", "switch_tool"):
                 new_tool = decision.get("tool", tool_name)
                 new_args = decision.get("args", args)
-                self.trace.tool_call(tool_name=new_tool, args=new_args, step=step.get("step", 0), round_num=round_num)
+                self.trace.tool_call(tool_name=new_tool, args=new_args, step=step.get("step", 0), round_num=round_num, model=self._tool_model(new_tool))
                 try:
                     t_retry = time.time()
                     result = self._call_tool_safe(new_tool, new_args)
@@ -801,9 +802,14 @@ class ReActAgent:
         func = self.tool_map.get(tool_name)
         if func is None:
             return {"error": f"未知工具: {tool_name}"}
-        # 过滤掉 _ 开头的内部参数
         clean_args = {k: v for k, v in args.items() if not k.startswith("_")}
         return func(**clean_args)
+
+    def _tool_model(self, tool_name: str) -> str:
+        """返回工具内部使用的 LLM 模型名（用于 trace 显示）"""
+        if tool_name == "search_product_by_image":
+            return self.model_vision
+        return self.model_react
 
     def _build_tools_description(self) -> str:
         """将 tools schema 转为可读文本供 plan prompt 使用"""
@@ -912,7 +918,7 @@ class ReActAgent:
                     if rd.get("cheapest"):
                         cheapest = rd["cheapest"]
 
-                self.trace.tool_call(tool_name=tool_name, args=tool_args, round_num=round_num + 1)
+                self.trace.tool_call(tool_name=tool_name, args=tool_args, round_num=round_num + 1, model=self._tool_model(tool_name))
                 self.trace.tool_result(
                     tool_name=tool_name, found=found, match_count=match_count,
                     cheapest=cheapest, error=observation.get("error", ""),
