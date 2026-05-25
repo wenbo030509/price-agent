@@ -366,7 +366,8 @@ def init_product_embeddings(industry_config: dict, embedding_client):
     result = agent.query_all_products_parallel()
 
     all_products = []
-    for platform_id, data in result.get("results", {}).items():
+    for platform_id in sorted(result.get("results", {}).keys()):
+        data = result["results"][platform_id]
         platform_name = data.get("platform_name", platform_id)
         for p in data.get("products", []):
             p["_platform_name"] = platform_name
@@ -374,6 +375,14 @@ def init_product_embeddings(industry_config: dict, embedding_client):
 
     if not all_products:
         return
+
+    unique_products = []
+    seen_names = set()
+    for p in all_products:
+        name = p.get("product_name", "")
+        if name and name not in seen_names:
+            seen_names.add(name)
+            unique_products.append(p)
 
     # 1. 加载已有缓存
     cached = _load_embedding_cache()
@@ -384,7 +393,7 @@ def init_product_embeddings(industry_config: dict, embedding_client):
     to_embed = []
     reused = 0
 
-    for p in all_products:
+    for p in unique_products:
         name = p.get("product_name", "")
         if not name:
             continue
