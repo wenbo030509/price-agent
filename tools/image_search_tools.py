@@ -111,7 +111,11 @@ def _get_vision_client():
     """获取多模态识别的 client 和 model"""
     from config import Settings
     s = Settings()
-    return s.client, getattr(s, "model_vision", s.model)
+    ark_client = OpenAI(
+        api_key=s.ark_api_key,
+        base_url=s.embedding_base_url,
+    )
+    return ark_client, getattr(s, "model_vision", s.model)
 
 
 # ── 图片搜索工具 ────────────────────────────────────────────────────────────
