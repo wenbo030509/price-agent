@@ -39,13 +39,18 @@ def init_mock_db(db: DatabaseConnection):
     return db
 
 
+def _now_local() -> str:
+    return datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=8))).isoformat()
+
+
 def create_session(db: DatabaseConnection, session_id: str) -> Dict:
     cursor = db.get_cursor()
-    cursor.execute("INSERT INTO sessions (session_id) VALUES (?)", (session_id,))
+    now = _now_local()
+    cursor.execute("INSERT INTO sessions (session_id, created_at) VALUES (?, ?)", (session_id, now))
     db.commit()
     return {
         "session_id": session_id,
-        "created_at": datetime.datetime.now().isoformat()
+        "created_at": now
     }
 
 
@@ -72,9 +77,10 @@ def get_all_sessions(db: DatabaseConnection) -> List[Dict]:
 
 def add_message(db: DatabaseConnection, session_id: str, role: str, content: str) -> Dict:
     cursor = db.get_cursor()
+    now = _now_local()
     cursor.execute(
-        "INSERT INTO messages (session_id, role, content) VALUES (?, ?, ?)",
-        (session_id, role, content)
+        "INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)",
+        (session_id, role, content, now)
     )
     message_id = cursor.lastrowid
     db.commit()
@@ -83,7 +89,7 @@ def add_message(db: DatabaseConnection, session_id: str, role: str, content: str
         "session_id": session_id,
         "role": role,
         "content": content,
-        "timestamp": datetime.datetime.now().isoformat()
+        "timestamp": now
     }
 
 

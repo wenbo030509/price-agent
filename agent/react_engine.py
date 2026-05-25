@@ -77,7 +77,7 @@ class ReActAgent:
         model: str,
         tools: List[Dict],
         tool_map: Dict[str, Callable],
-        max_round: int = 5,
+        max_round: int = 10,
         config: Optional[Dict] = None,
     ):
         self.client = client
@@ -150,6 +150,7 @@ class ReActAgent:
         运行 Agent。根据意图分类路由到不同的执行模式。
         - recommendation：推荐型 → ReAct + intent hint
         - comparison：Plan-Execute
+        - shopping：引导式购物 → ShoppingContext 状态机
         - query：ReAct
         """
         self.trace.reset()
@@ -157,13 +158,30 @@ class ReActAgent:
         if history:
             history = self._slide_window(history)
 
+        # ── M5: 购物状态机激活时，后续输入直接路由到引导式购物 ──
+        # 不再经过意图分类，避免"打游戏""预算4000"等槽位回复被误判为
+        # recommendation/comparison 而绕过 ShoppingContext
+        if self.shopping_context.phase != "greeting":
+            # 先检测话题切换（优先级高于结束购物，因为"算了帮我查XX"是切换不是结束）
+            if self._is_topic_switch(user_query):
+                if verbose:
+                    print(f"\n[Shopping] 检测到话题切换，退出购物模式 → 正常路由")
+                self.shopping_context.reset()
+                # 继续走正常意图路由（不 return）
+            elif self._is_ending_shopping(user_query):
+                if verbose:
+                    print(f"\n[Shopping] 用户退出购物模式")
+                self.shopping_context.reset()
+                return "好的！如果还有其他需要，随时告诉我。"
+            else:
+                if verbose:
+                    print(f"\n[Shopping] 购物模式续 ({self.shopping_context.phase})")
+                self.trace.intent(intent="shopping", query=user_query)
+                self.trace.mode_select(mode="shopping", reason="购物引导模式（续）", model=self.model_react)
+                return self._guided_shopping(user_query, history, verbose)
+
         intent = self._detect_intent(user_query)
         self.trace.intent(intent=intent, query=user_query, model_count=self._count_models(user_query))
-
-        # M5: 检测购物中途退出
-        if self.shopping_context.phase != "greeting" and intent != "shopping":
-            if self._is_ending_shopping(user_query):
-                self.shopping_context.reset()
 
         if intent == "recommendation":
             self.trace.mode_select(mode="react", reason="推荐型查询，启用语义推荐模式", model=self.model_react)
@@ -177,7 +195,7 @@ class ReActAgent:
                 print(f"\n[Intent: comparison] 启用 Plan-Execute 对比模式")
             return self._plan_and_execute(user_query, history, verbose)
 
-        elif intent == "shopping":                                    # M5: 新增
+        elif intent == "shopping":
             self.trace.mode_select(mode="shopping", reason="购物引导模式", model=self.model_react)
             if verbose:
                 print(f"\n[Intent: shopping] 启用引导式购物模式")
@@ -258,9 +276,10 @@ class ReActAgent:
         分类用户意图：
         - "recommendation"：推荐型，如"推荐游戏手机"、"5000以内什么手机好"
         - "comparison"：对比型，如"iPhone 15 和小米14哪个好"
+        - "shopping"：引导购物，如"想买个手机"、"帮我挑一款"
         - "query"：查价型，如"iPhone 15 京东多少钱"
 
-        返回 "recommendation" / "comparison" / "query"
+        返回 "recommendation" / "comparison" / "shopping" / "query"
         """
         # 推荐意图检测
         has_use_case = any(kw in query for kw in USE_CASE_TRIGGER_MAP)
@@ -1067,9 +1086,29 @@ class ReActAgent:
     # ═══════════════════════════════════════════════════════════════════════
 
     def _is_ending_shopping(self, query: str) -> bool:
-        """检测用户是否在结束购物"""
-        end_words = ["谢谢", "好的", "就这个", "下单", "买了", "不用了", "算了"]
-        return any(w in query for w in end_words)
+        """检测用户是否在结束购物（纯结束，不含新查询意图）"""
+        end_words = ["谢谢", "好的", "就这个", "下单", "买了", "不用了", "算了", "不买了"]
+        has_end = any(w in query for w in end_words)
+        if not has_end:
+            return False
+        # 如果同时表达了新查询意图（如"算了帮我查iPhone 15"），不算结束
+        has_new_query = self._count_models(query) > 0 or any(
+            w in query for w in ["帮我查", "搜一下", "多少钱", "比价", "推荐"]
+        )
+        return not has_new_query
+
+    def _is_topic_switch(self, query: str) -> bool:
+        """检测用户是否在购物中途切换到具体商品查询。
+        购物模式下用户突然提到具体商品型号，说明想离开购物流程做精确查询。"""
+        model_count = self._count_models(query)
+        if model_count == 0:
+            return False
+        # 检查提到的型号是否在当前推荐候选列表中（在候选内不算切换）
+        for c in self.shopping_context.candidates:
+            name = c.get("product_name", "")
+            if name and name in query:
+                return False
+        return True
 
     def _guided_shopping(
         self,
@@ -1101,28 +1140,38 @@ class ReActAgent:
             prev_slots = set(ctx.slots.keys())
             self._extract_slots_from_query(user_query, slots_cfg)
             new_slots = set(ctx.slots.keys()) - prev_slots
-            for s in new_slots:
-                self.trace.slot_filled(slot_name=s, value=ctx.slots.get(s), phase="slot_filling")
 
-            ctx.question_count += 1
-            missing = ctx.get_missing_required(slots_cfg)
-
-            if not missing:
-                ctx.phase = "searching"
-                self.trace.shopping_phase(phase="searching", from_phase="slot_filling")
-            elif ctx.question_count >= max_questions:
+            if not new_slots:
+                # 用户输入未提取到任何槽位 — 可能是无关闲聊或前言不搭后语
+                # 不计入 question_count，重新追问当前缺失的槽位
+                missing = ctx.get_missing_required(slots_cfg)
+                if missing:
+                    return f"我没太理解您的意思，{self._ask_slot_question(missing[0])}"
+                # 没有必填缺失，直接进入搜索
                 ctx.phase = "searching"
                 self.trace.shopping_phase(phase="searching", from_phase="slot_filling")
             else:
-                optional = [s for s in slots_cfg if not s.get("required") and s["name"] not in ctx.slots]
-                if optional:
-                    return self._ask_slot_question(optional[0])
-                ctx.phase = "searching"
-                self.trace.shopping_phase(phase="searching", from_phase="slot_filling")
+                for s in new_slots:
+                    self.trace.slot_filled(slot_name=s, value=ctx.slots.get(s), phase="slot_filling")
+
+                ctx.question_count += 1
+                missing = ctx.get_missing_required(slots_cfg)
+
+                if not missing:
+                    ctx.phase = "searching"
+                    self.trace.shopping_phase(phase="searching", from_phase="slot_filling")
+                elif ctx.question_count >= max_questions:
+                    ctx.phase = "searching"
+                    self.trace.shopping_phase(phase="searching", from_phase="slot_filling")
+                else:
+                    optional = [s for s in slots_cfg if not s.get("required") and s["name"] not in ctx.slots]
+                    if optional:
+                        return self._ask_slot_question(optional[0])
+                    ctx.phase = "searching"
+                    self.trace.shopping_phase(phase="searching", from_phase="slot_filling")
 
         # Phase: SEARCHING
         if ctx.phase == "searching":
-            self.trace.shopping_phase(phase="searching", from_phase=ctx.phase)
             result = self._search_with_slots(ctx.slots)
             ctx.candidates = result.get("recommendations", [])
             ctx.last_recommendation = result
@@ -1177,7 +1226,7 @@ class ReActAgent:
                     # group(0) 是整个匹配，从中提取第一个数字
                     nums = re.findall(r'\d+', m.group(0))
                     if nums:
-                        ctx.add_slot(name, int(nums[0]))
+                        ctx.add_slot(name, int(max(nums, key=int)))
 
         # budget_range → budget_max 映射
         if "budget_range" in ctx.slots and "budget_max" not in ctx.slots:
@@ -1219,20 +1268,27 @@ class ReActAgent:
             pref = slots["processor_preference"]
             params["processor_brand"] = proc_map.get(pref, pref)
 
-        return semantic_product_search(**params)
+        try:
+            return semantic_product_search(**params)
+        except Exception as e:
+            print(f"  ⚠ 购物搜索失败: {e}")
+            return {"recommendations": [], "total_found": 0, "error": str(e)}
 
     def _search_and_respond(self) -> str:
-        """执行搜索并格式化推荐返回"""
+        """执行搜索并格式化推荐返回，完成后 phase → recommending"""
         ctx = self.shopping_context
         result = self._search_with_slots(ctx.slots)
         ctx.candidates = result.get("recommendations", [])
         ctx.last_recommendation = result
+        ctx.phase = "recommending"
         return self._format_recommendation(result)
 
     def _format_recommendation(self, result: dict) -> str:
         """将推荐结果格式化为用户可读文本"""
         recs = result.get("recommendations", [])
         if not recs:
+            if result.get("error"):
+                return "抱歉，搜索服务暂时不可用，请稍后再试。"
             return "抱歉，没有找到符合条件的商品。要不要调整一下条件试试？"
 
         lines = ["为您找到以下商品：", ""]
@@ -1259,7 +1315,7 @@ class ReActAgent:
         ctx = self.shopping_context
 
         # 对比意图
-        if any(w in user_query for w in ["对比", "比较", "哪个好", "哪个更", "这两个"]):
+        if any(w in user_query for w in ["对比", "比较", "哪个好", "哪个更", "这两个", "这几个", "这三个", "哪款好"]):
             self.trace.shopping_phase(phase="comparing", from_phase=ctx.phase)
             ctx.phase = "comparing"
             return self._handle_comparison(user_query)
@@ -1268,12 +1324,10 @@ class ReActAgent:
         new_budget = self._detect_budget_adjust(user_query)
         if new_budget:
             ctx.slots["budget_max"] = new_budget
-            ctx.phase = "searching"
             return self._search_and_respond()
 
         # 价格敏感
         if any(w in user_query for w in ["便宜", "更便宜", "贵了", "超预算"]):
-            ctx.phase = "searching"
             return self._search_and_respond()
 
         # 结束
@@ -1281,12 +1335,15 @@ class ReActAgent:
             ctx.reset()
             return "好的！如果还有其他需要，随时告诉我。"
 
-        # 默认：追加条件重新搜
+        # 默认：追加条件重新搜（只有提取到新槽位才重新搜索）
+        prev_slots = set(ctx.slots.keys())
         self._extract_slots_from_query(
             user_query, self.industry_config.get("shopping_slots", [])
         )
-        ctx.phase = "searching"
-        return self._search_and_respond()
+        if set(ctx.slots.keys()) != prev_slots:
+            return self._search_and_respond()
+
+        return "您可以告诉我更多需求，比如预算、品牌偏好，或者让我帮您对比推荐的商品。"
 
     def _handle_comparison(self, user_query: str) -> str:
         """对比模式"""
@@ -1320,7 +1377,7 @@ class ReActAgent:
             model=self.model_synthesize,
             messages=messages,
             temperature=0.3,
-            max_tokens=800,
+            max_tokens=2000,
         )
 
         ctx.phase = "follow_up"

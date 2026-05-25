@@ -79,7 +79,7 @@ class Settings:
 
     def _load_agent_config(self):
         """加载 Agent 配置"""
-        self.max_round = 5
+        self.max_round = 10
 
         # Plan-Execute 配置
         self.max_plan_steps = 8

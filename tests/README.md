@@ -11,7 +11,7 @@
 | `test_m1_config.py` | 行业配置加载、默认值补齐、Schema 验证 | 单元 | `python3 tests/test_m1_config.py` |
 | `test_m2_recall.py` | 向量召回、规则过滤、混合检索、开关降级 | 单元+集成 | `python3 tests/test_m2_recall.py` |
 | `test_m3_rag.py` | 知识库索引、BM25+语义检索、工具注册 | 单元+集成 | `python3 tests/test_m3_rag.py` |
-| `test_m5_shopping.py` | ShoppingContext 状态机、意图分类、槽位提取、对话流程 | 单元 | `python3 tests/test_m5_shopping.py` |
+| `test_m5_shopping.py` | ShoppingContext 状态机、意图分类(10 case)、槽位提取、多轮对话流程、路由持久性、话题切换/结束检测、无关输入处理、回归(39项) | 单元+集成 | `python3 tests/test_m5_shopping.py` |
 | `test_embedding.py` | Embedding API 连通性、向量维度、语义相似度 | 集成 | `python3 tests/test_embedding.py` |
 | `test_multi_platform.py` | 多平台并行查询、结果格式化 | 集成 | `python3 tests/test_multi_platform.py` |
 | `test_query_fix.py` | 商品查询大小写/空格容错 | 集成 | `python3 tests/test_query_fix.py` |

@@ -123,6 +123,8 @@ def initialize():
             "max_reflection_retries": getattr(settings, "max_reflection_retries", 2),
             "auto_relax_attributes": getattr(settings, "auto_relax_attributes", True),
             "max_step_react_rounds": getattr(settings, "max_step_react_rounds", 2),
+            # M1/M5: 行业配置（shopping_slots / compare_dimensions 等）
+            "industry_config": getattr(settings, "industry_config", {}),
         },
     )
 
@@ -350,7 +352,7 @@ def _save_trace(session_id: str, query: str, trace, answer: str):
                 "query": query,
                 "session_id": session_id,
                 "timestamp": ts,
-                "answer": answer[:500],
+                "answer": answer,
             },
             "events": trace.to_list(),
         }
