@@ -252,12 +252,15 @@ function renderDAGStepNode(step, status) {
     const statusIcon = { pending: '○', running: '◉', done: '✓', error: '✗' };
     const statusCls = 'l3-dag-node ' + status;
     const icon = statusIcon[status] || '○';
+    const tool = step.tool || '';
+    const purpose = step.purpose || '';
     const depends = step.depends_on ? ` ← Step ${step.depends_on}` : '';
+    const fullText = [tool, purpose, depends].filter(Boolean).join(' · ');
     return `
-        <div class="${statusCls}">
+        <div class="${statusCls}" title="${escapeHtml(fullText)}">
             <span class="l3-dag-status">${icon}</span>
-            <span class="l3-dag-tool">${escapeHtml(step.tool || '')}</span>
-            <span class="l3-dag-purpose">${escapeHtml(step.purpose || '')}</span>
+            <span class="l3-dag-tool">${escapeHtml(tool)}</span>
+            <span class="l3-dag-purpose">${escapeHtml(purpose)}</span>
             ${depends ? `<span class="l3-dag-dep">${escapeHtml(depends)}</span>` : ''}
         </div>`;
 }
@@ -426,10 +429,10 @@ function clearChat() {
             <div class="welcome-title">Price Agent</div>
             <div class="welcome-subtitle">智能识物比价助手 — 拍照搜同款、跨平台比价、帮你找到最具性价比的选择</div>
             <div class="welcome-actions">
-                <div class="welcome-chip" onclick="quickAsk('iPhone 15 在哪个平台最便宜')">📱 比较最新 iPhone 价格</div>
-                <div class="welcome-chip" onclick="quickAsk('小米14 黑色 256GB 各平台价格')">🔍 查找小米14 最优惠价</div>
-                <div class="welcome-chip" onclick="quickAsk('我想买平板，帮我看看各平台有什么')">📋 浏览各平台平板电脑</div>
-                <div class="welcome-chip" onclick="quickAsk('AirPods Pro 2 在哪买最划算')">🎧 查找 AirPods 最低价</div>
+                <div class="welcome-chip" onclick="quickAsk('iPhone 15 各平台最低价是多少')">� 智能查价 · ReAct</div>
+                <div class="welcome-chip" onclick="quickAsk('iPhone 15 和小米14 哪个更值得买')">⚖️ 多品对比 · Plan-Execute</div>
+                <div class="welcome-chip" onclick="quickAsk('5000以内拍照好的游戏手机推荐')">🎯 场景推荐 · Recommend</div>
+                <div class="welcome-chip" onclick="quickAsk('想买个手机，帮我看看有什么')">🛒 引导购物 · Shopping</div>
             </div>
         </div>`;
     clearReasoning();

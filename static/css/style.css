@@ -579,8 +579,8 @@ body {
 }
 
 .l3-dag-group.parallel .l3-dag-nodes {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: 8px;
 }
 
@@ -588,6 +588,10 @@ body {
   display: flex;
   flex-direction: column;
   gap: 2px;
+}
+
+.l3-dag-group.serial .l3-dag-node {
+  width: 100%;
 }
 
 .l3-dag-arrow {
@@ -607,8 +611,8 @@ body {
   border: 1px solid var(--border);
   font-size: 12px;
   transition: all .2s;
-  flex: 1;
-  min-width: 140px;
+  overflow: hidden;
+  min-width: 0;
 }
 .l3-dag-node.running {
   border-color: var(--brand);
@@ -642,12 +646,21 @@ body {
   font-family: 'JetBrains Mono', monospace;
   font-size: 11px;
   color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 130px;
+  flex-shrink: 0;
 }
 
 .l3-dag-purpose {
   color: var(--text-secondary);
   font-size: 11px;
-  flex: 1;
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .l3-dag-dep {
@@ -656,6 +669,11 @@ body {
   background: var(--bg-input);
   padding: 1px 5px;
   border-radius: 3px;
+  flex-shrink: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 85px;
 }
 
 /* ── L3: 时间瀑布 ─────────────────────────────────────────────── */
