@@ -110,9 +110,10 @@ def initialize():
         max_round=settings.max_round,
         config={
             # 多模型路由
-            "model_react": getattr(settings, "model", "doubao-seed-2-0-pro-260215"),
-            "model_plan": getattr(settings, "model_plan", "doubao-seed-2-0-code-preview-260215"),
-            "model_synthesize": getattr(settings, "model_synthesize", "doubao-seed-2-0-pro-260215"),
+            "model_react": getattr(settings, "model", "deepseek-v4-flash"),
+            "model_plan": getattr(settings, "model_plan", "deepseek-v4-flash"),
+            "model_synthesize": getattr(settings, "model_synthesize", "deepseek-v4-flash"),
+            "model_vision": getattr(settings, "model_vision", "doubao-seed-2-0-pro-260215"),
             # Agent 参数
             "max_plan_steps": getattr(settings, "max_plan_steps", 8),
             "max_history_rounds": getattr(settings, "max_history_rounds", 6),
