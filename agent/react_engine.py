@@ -120,6 +120,23 @@ class ReActAgent:
         # Trace 事件收集器（推理可视化）
         self.trace = TraceCollector()
 
+    # ── LLM 调用（含重试） ────────────────────────────────────────────
+
+    def _call_llm(self, max_retries=3, **kwargs):
+        for attempt in range(1, max_retries + 1):
+            try:
+                return self.client.chat.completions.create(**kwargs)
+            except Exception as e:
+                err = str(e)[:120]
+                retryable = any(s in err for s in
+                    ["503", "502", "504", "429", "busy", "rate_limit", "timeout"])
+                if not retryable or attempt >= max_retries:
+                    raise
+                wait = 2 ** attempt
+                print(f"  ⚠ LLM 调用失败 (attempt {attempt}/{max_retries}): {err}")
+                print(f"  ↻ {wait}s 后重试...")
+                time.sleep(wait)
+
     # ── 入口 ──────────────────────────────────────────────────────────
 
     def run(
@@ -345,7 +362,7 @@ class ReActAgent:
             print(f"\n[Phase 1] 生成执行计划...")
 
         try:
-            resp = self.client.chat.completions.create(
+            resp = self._call_llm(
                 model=self.model_plan,
                 messages=messages,
                 temperature=0,
@@ -566,7 +583,7 @@ class ReActAgent:
 只输出 JSON，不要其他文字。"""
 
             try:
-                resp = self.client.chat.completions.create(
+                resp = self._call_llm(
                     model=self.model_react,
                     messages=[{"role": "user", "content": reflection_prompt}],
                     temperature=0,
@@ -762,7 +779,7 @@ class ReActAgent:
         try:
             if verbose and self.model_synthesize != self.model:
                 print(f"[Phase 3] 使用模型: {self.model_synthesize}")
-            resp = self.client.chat.completions.create(
+            resp = self._call_llm(
                 model=self.model_synthesize,
                 messages=messages,
                 temperature=0.3,
@@ -830,7 +847,7 @@ class ReActAgent:
         for round_num in range(self.max_round):
             if round_num == 0 and verbose and self.model_react != self.model:
                 print(f"[ReAct] 使用模型: {self.model_react}")
-            response = self.client.chat.completions.create(
+            response = self._call_llm(
                 model=self.model_react,
                 messages=messages,
                 tools=self.tools,
@@ -1293,7 +1310,7 @@ class ReActAgent:
 请逐项对比，最后给出明确建议。"""},
         ]
 
-        resp = self.client.chat.completions.create(
+        resp = self._call_llm(
             model=self.model_synthesize,
             messages=messages,
             temperature=0.3,
