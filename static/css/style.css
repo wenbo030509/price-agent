@@ -1433,6 +1433,16 @@ body {
 .trace-item:hover .trace-item-delete { opacity: .6; }
 .trace-item-delete:hover { color: var(--error); opacity: 1 !important; }
 
+/* Trace 列表区域 & 回放区域 — 作为 debug-panel 的 flex 子项 */
+#traceListSection,
+#tracePlaybackSection {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+  min-height: 0;
+}
+
 /* 回放控制栏 */
 .playback-controls {
   display: flex;

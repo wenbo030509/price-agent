@@ -398,7 +398,7 @@ async function switchSession(sessionId) {
     currentSessionId = sessionId;
     loadSessions();
     clearChat();
-    // 切换历史会话 → 默认显示调试 Tab
+    closePlayback();
     switchRightTab('debug-tab');
     try {
         const resp = await fetch(`/api/sessions/${sessionId}/messages`);
@@ -654,7 +654,7 @@ function mapEventToNode(ev) {
             const argsStr = typeof d.args === 'object' ? JSON.stringify(d.args) : String(d.args || '');
             const where = d.step ? `Step ${d.step} Round ${d.round || 1}` : `Round ${d.round || ''}`;
             return { type: 'action', title: `${d.tool}`,
-                     detail: `${where}\n参数: ${argsStr}`, elapsedMs: null };
+                     detail: `${where}\n参数: ${argsStr}`, elapsedMs: null, _model: d.model || '' };
         }
 
         case 'tool_result': {
@@ -1137,7 +1137,7 @@ function stopPlayback() {
 function closePlayback() {
     stopPlayback();
     document.getElementById('tracePlaybackSection').style.display = 'none';
-    document.getElementById('traceListSection').style.display = 'block';
+    document.getElementById('traceListSection').style.display = '';
 }
 
 async function loadTraceForPlayback(filename) {
@@ -1151,7 +1151,7 @@ async function loadTraceForPlayback(filename) {
         stopPlayback();
 
         document.getElementById('traceListSection').style.display = 'none';
-        document.getElementById('tracePlaybackSection').style.display = 'block';
+        document.getElementById('tracePlaybackSection').style.display = '';
         document.getElementById('playbackQuery').textContent =
             (playbackTrace.meta && playbackTrace.meta.query) || filename;
 
@@ -1362,9 +1362,13 @@ document.addEventListener('DOMContentLoaded', () => {
     // 默认显示商品管理 Tab（类似新建会话后的页面）
     switchRightTab('products-tab');
 
-    // L4: Debug Tab 每次切换时自动刷新 trace 列表
+    // L4: Debug Tab 每次点击时自动刷新 trace 列表，并回到列表视图
     const debugTab = document.getElementById('debug-tab');
     if (debugTab) {
+        debugTab.addEventListener('click', () => {
+            loadTraceList();
+            closePlayback();
+        });
         debugTab.addEventListener('shown.bs.tab', () => {
             loadTraceList();
         });
