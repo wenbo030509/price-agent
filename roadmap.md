@@ -24,18 +24,40 @@ Price Agent 是一个**智能商品比价助手**，核心链路为：
 
 | 模式 | 触发条件 | 能力说明 |
 |------|---------|---------|
-| **ReAct 模式** | 单商品查价、推荐型查询 | 标准 Think → Act → Observe 循环，LLM 自主选择工具 |
+| **ReAct 模式** | 单商品查价、推荐型查询 | 标准 Think → Act → Observe 循环，LLM 自主选择工具和 Skill |
 | **Plan-Execute 模式** | 多商品对比、复杂分析 | LLM 生成多步执行计划（含步骤间依赖关系）→ 无依赖步骤并行执行 → 有依赖步骤串行执行 → Step 级 mini-ReAct 自反思纠错 → Phase 3 综合分析 |
 | **Shopping 模式** | 无明确型号的购物咨询 | M5 槽位填充状态机，逐步引导用户明确需求 → 推荐候选 → 对比决策 |
 
 **关键设计点**：
 
+- **Skills 按需加载**：5 个 SKILL.md 技能模块，SkillLoader 解析 YAML frontmatter + markdown，LLM 通过 `load_skill` 元工具自主选择加载，用户支持 `/skill-name` 显式调用，加载后内容跨轮次持久化
 - **多模型路由**：三个阶段的 LLM 调用使用不同模型（`model_plan` / `model_react` / `model_synthesize`），支持独立配置
 - **自反思纠错**：工具调用结果为空或异常时，Step 级 mini-ReAct 循环（最多 2 轮反思），LLM 自主决定：换参数重试 / 换工具 / 放弃
 - **$step{N} 引用语法**：Plan 中的步骤可引用前面步骤的结果，实现跨步骤数据共享
 - **滑动窗口历史**：同会话内保留最近 6 轮 / 6000 字符的对话历史，用于理解指代
 
-### 2.2 工具系统
+### 2.2 Skills 系统
+
+**Skill 定义与加载**：`agent/skills/` 目录 — 5 个 SKILL.md 文件（YAML frontmatter + markdown body）
+
+| Skill | 文件 | 描述 |
+|------|------|------|
+| `price_comparison` | [price_comparison.md](file:///Users/wenbowang/Documents/trae_projects/price-agent/agent/skills/price_comparison.md) | 跨平台比价：4 个 few-shot 示例，覆盖简单比价/指定平台/空结果/歧义 |
+| `vision_search` | [vision_search.md](file:///Users/wenbowang/Documents/trae_projects/price-agent/agent/skills/vision_search.md) | 图片识别搜同款：VLM 识别 → 多平台比价流程指南 |
+| `semantic_recommend` | [semantic_recommend.md](file:///Users/wenbowang/Documents/trae_projects/price-agent/agent/skills/semantic_recommend.md) | 场景推荐：3 个 few-shot 示例，覆盖场景/预算/处理器筛选 |
+| `rag_knowledge` | [rag_knowledge.md](file:///Users/wenbowang/Documents/trae_projects/price-agent/agent/skills/rag_knowledge.md) | RAG 知识检索：评测/芯片对比/知识增强策略 |
+| `shopping_guide` | [shopping_guide.md](file:///Users/wenbowang/Documents/trae_projects/price-agent/agent/skills/shopping_guide.md) | 引导式购物：槽位填充 → 推荐 → 比价 → 对比流程 |
+
+**核心机制**：
+
+- **SkillLoader**：[loader.py](file:///Users/wenbowang/Documents/trae_projects/price-agent/agent/skills/loader.py) — 扫描 `agent/skills/*.md`，解析 YAML frontmatter，生成 253 chars 紧凑 Catalog 注入 system prompt
+- **load_skill 元工具**：注册为 OpenAI function tool，LLM 自主决定何时加载哪个 Skill，引擎拦截处理后注入 system 消息，加载后内容跨 ReAct 轮次持久化
+- **用户显式调用**：支持 `/price_comparison` 等 Skill 前缀直接加载
+- **预加载优化**：`_detect_intent()` 意图分类后自动预加载对应 Skill，避免常用场景多一轮 LLM 调用
+- **Token 节省**：单场景 prompt 从 5,825 chars → 1,181-1,500 chars（节省 74-80%）
+- **零代码扩展**：新增 Skill 只需添加一个 .md 文件，无需修改任何 Python 代码
+
+### 2.3 工具系统
 
 **工具注册与发现**：`tools/registry.py` — 基于 `@register_tool` 装饰器的声明式工具注册
 
@@ -116,11 +138,14 @@ Price Agent 是一个**智能商品比价助手**，核心链路为：
               │
 ┌─────────────▼──────────────────────────────────────┐
 │               ReActAgent                           │
-│  意图分类 → 模式路由 → 执行 → 综合回答                  │
+│  意图分类 → Skill 加载 → 模式路由 → 执行 → 综合回答    │
 │  ┌──────────┐ ┌──────────────┐ ┌──────────────┐    │
 │  │  ReAct   │ │ Plan-Execute │ │  Shopping    │    │
 │  │  (LLM)   │ │  (Planner)   │ │  (SlotFill)  │    │
 │  └──────────┘ └──────────────┘ └──────────────┘    │
+│  ┌──────────────────────────────────────────────┐   │
+│  │  SkillLoader: SKILL.md × 5 + load_skill 元工具│   │
+│  └──────────────────────────────────────────────┘   │
 └─────────────┬──────────────────────────────────────┘
               │
 ┌─────────────▼──────────────────────────────────────┐
@@ -169,6 +194,7 @@ Price Agent 是一个**智能商品比价助手**，核心链路为：
 | 图片搜同款 | ⭐⭐⭐⭐ | VLM 识别 → 属性提取 → 文本比价，端到端工具链 |
 | 语义推荐 | ⭐⭐⭐⭐ | Embedding 向量召回 + 规则过滤混合，性价比评分 |
 | RAG 知识检索 | ⭐⭐⭐ | Markdown 分块 + BM25 + 语义混合检索 |
+| Skills 按需加载 | ⭐⭐⭐⭐⭐ | 5 个 SKILL.md 模块，LLM 自主选择，/skill-name 显式调用，token 节省 74-80% |
 | 推理可视化 | ⭐⭐⭐⭐⭐ | 结构化 Trace + SSE 流式 + 时间线渲染 |
 | 会话持久化 | ⭐⭐⭐⭐ | SQLite 存储，滑动窗口历史，会话搜索 |
 | 前端交互 | ⭐⭐⭐⭐ | 完整 CRUD，图片上传/粘贴/拖拽，响应式布局 |
@@ -216,6 +242,33 @@ Price Agent 是一个**智能商品比价助手**，核心链路为：
 | **多 Agent 协作** | 多个专业 Agent 协同（查价 Agent + 推荐 Agent + 问答 Agent + 售后 Agent） |
 | **实时价格监控** | 定时轮询商品价格变化 → 价格走势图 → 降价提醒/推送 |
 
+### 5.5 Skills 架构（✅ 已完成 — 2026-05-26）
+
+#### 实现方案
+
+将巨型单体 `SYSTEM_PROMPT`（5,825 chars）拆分为 5 个独立 `SKILL.md` 技能模块（YAML frontmatter + markdown），采用 Claude Code 风格的 Skills 设计：
+
+- **SkillLoader**：扫描 `agent/skills/*.md`，解析 frontmatter 元数据，生成 253 chars 紧凑 Catalog
+- **load_skill 元工具**：注册为 OpenAI function tool，LLM 根据用户意图自主决定加载哪个 Skill，引擎拦截后注入 system 消息并跨轮次持久化
+- **用户显式调用**：支持 `/price_comparison` 等前缀直接加载 Skill
+- **预加载优化**：`_detect_intent()` 意图分类后自动预加载对应 Skill（避免常用场景多一轮 LLM 调用）
+- **Catalog 始终可见**：每个 Skill 一行描述（~250 chars），LLM 始终知道有哪些可用 Skill
+
+#### 实际效果
+
+| 场景 | 激活 Skills | 原 prompt | Skills 后 | 节省 |
+|------|-------------|:---:|:---:|:---:|
+| 简单比价 | price_comparison | 5,825 chars | 1,181 chars | **80%** |
+| 图片搜同款 | vision_search + price_comparison | 5,825 chars | 1,329 chars | **77%** |
+| 推荐 + 比价 | semantic_recommend + price_comparison | 5,825 chars | ~1,500 chars | **74%** |
+| 对比 + 知识 | price_comparison + rag_knowledge | 5,825 chars | ~1,400 chars | **76%** |
+
+**向后兼容**：Skill 加载失败或未命中时回退完整 `SYSTEM_PROMPT`。116 测试全部通过，eval 综合通过率 95.9% 零回归。
+
+**零代码扩展**：新增 Skill 只需添加一个 .md 文件到 `agent/skills/`，无需修改任何 Python 代码。
+
+> 原始设计文档：[docs/skills-architecture-plan.md](file:///Users/wenbowang/Documents/trae_projects/price-agent/docs/skills-architecture-plan.md)
+
 ---
 
 ## 六、技术栈清单
@@ -248,6 +301,7 @@ Price Agent 是一个**智能商品比价助手**，核心链路为：
 - [ ] API 接口鉴权（当前 `/api/chat/stream` 无认证）
 
 ### P2 — 中期
+- [x] **Skills 化改造**（✅ 已完成 — SKILL.md 驱动 + load_skill 元工具 + /skill-name 显式调用，token 节省 74-80%）
 - [ ] 结构化 Memory 模块（向量化用户画像 + 跨会话兴趣留存）
 - [ ] Embedding 向量数据库（替换内存缓存）
 - [ ] 图搜 VLM prompt 优化（支持更多商品品类识别）
