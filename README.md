@@ -77,6 +77,7 @@
 - **ReAct 推理闭环**：Thought → Action → Observation → Final Answer
 - **Plan-Execute 策略**：Phase 1 生成 JSON 计划 → Phase 2 每 Step 独立 mini-ReAct → Phase 3 综合回答
 - **意图分类路由**：自动识别 4 种意图（推荐/查价/对比/购物），路由到最优执行模式
+- **Skills 按需加载**：5 个 SKILL.md 技能模块，LLM 通过 `load_skill` 元工具自主选择，用户 `/skill-name` 显式调用
 - **自反思纠错**：工具返回空结果时自动注入反思提示，引导重试或追问
 - **多模型路由**：文本模型 DeepSeek V4 Flash，视觉模型豆包，Embedding 豆包
 - **滑动窗口上下文**：保留最近 6 轮对话，理解"那小米14呢"等上下文指代
@@ -99,7 +100,7 @@
 - **对比模式**：多款商品按维度（性能/拍照/续航/价格/屏幕）逐项对比
 
 ### 推理可视化（L1-L4）
-- **结构化 Trace 事件**：12 种事件类型（intent/mode/plan/step/tool/reflection/shopping），替代 print() 驱动
+- **结构化 Trace 事件**：13 种事件类型（intent/mode/plan/step/tool/reflection/shopping/skill_load），替代 print() 驱动
 - **SSE 实时流式传输**：`/api/chat/stream` 端点，前端 ReadableStream 消费，推理步骤逐个实时出现
 - **模式特定可视化**：
   - M5 购物状态机：6 阶段横向进度条 + 槽位填充 chip
@@ -107,6 +108,14 @@
   - 时间瀑布：步骤耗时水平条形图
   - 模型路由徽章：节点标题行内显示模型名称
 - **调试仪表盘**：Trace 自动保存 → 列表（按会话过滤）→ 逐步骤回放（速度 0.5x-5x）→ 性能摘要
+
+### Skills 架构（Prompt 按需组合）
+- **SKILL.md 驱动**：5 个技能模块（比价/图片搜索/语义推荐/RAG 知识/购物引导），YAML frontmatter + markdown 定义
+- **LLM 自主选择**：`load_skill` 元工具让 LLM 根据用户意图自行决定加载哪个技能
+- **用户显式调用**：支持 `/price_comparison` 等 Skill 前缀直接调用
+- **上下文持久化**：加载后的 Skill 内容跨 ReAct 轮次持久保留
+- **Token 优化**：Catalog 仅 253 chars（vs 原 5,825 chars SYSTEM_PROMPT），单场景节省 74-80%
+- **零代码扩展**：新增 Skill 只需添加一个 .md 文件
 
 ### IT3C 手机品类
 - **17 个商品字段**：brand、processor、processor_brand、performance_tier、screen_size、battery、use_case_tags、description
@@ -148,9 +157,16 @@ ARK_EMBEDDING_MODEL=doubao-embedding-vision-251215
 ```
 price-agent/
   agent/
-    react_engine.py        ← ReActAgent + ShoppingContext（M5）
+    react_engine.py        ← ReActAgent + ShoppingContext（M5）+ Skills 架构
     trace.py               ← TraceEvent 结构化事件系统（L1-L2）
-    prompts.py             ← System prompt + 6 工具使用指南（M3）
+    prompts.py             ← 公共 Prompt 片段（COMMON_RULES/FORMAT/ERROR）
+    skills/
+      loader.py            ← SkillLoader：SKILL.md 解析 + Catalog 生成
+      price_comparison.md  ← 比价 Skill（4 个 few-shot）
+      vision_search.md     ← 图片搜索 Skill
+      semantic_recommend.md ← 语义推荐 Skill（3 个 few-shot）
+      rag_knowledge.md     ← RAG 知识检索 Skill
+      shopping_guide.md    ← 购物引导 Skill
   config/
     settings.py            ← 配置管理 + 多模型路由 + Embedding
     embedding.py           ← EmbeddingClient（doubao-embedding）

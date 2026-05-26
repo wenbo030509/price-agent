@@ -1,10 +1,33 @@
 # Test 运行结果记录
 
-> 运行时间：2026-05-14 13:00 ~ 13:10  
-> 触发原因：修复 `_react_loop` tool_calls 并行处理 + `run()` intent UnboundLocalError + `test_color_memory.py` import 顺序  
-> 运行环境：macOS, Python 3.13, DeepSeek API
+## 2026-05-26 — Skills 架构 Phase 1 验证
 
-## test_react_engine.py
+> 运行时间：2026-05-26  
+> 分支: `feature/skills-architecture`  
+> 变更: 将巨型单体 SYSTEM_PROMPT 拆分为 5 个独立 Skill 模块  
+> 命令: `python3 -m pytest tests/ -x -v`
+
+**116 个 test 全部通过，零回归。**
+
+| 测试文件 | 通过/总数 | 通过率 | 备注 |
+|----------|-----------|--------|------|
+| test_react_engine.py | 10/10 | 100% | Skills 集成后意图路由/ReAct/ShoppingContext 正常 |
+| test_m5_shopping.py | 9/9 + 39 回归 | 100% | 购物状态机不受影响 |
+| test_query_fix.py | 全部 | 100% | 多平台查询正常 |
+| test_color_memory.py | 全部 | 100% | 颜色/内存字段正常 |
+| test_m1_config.py | 7/7 | 100% | 行业配置加载正常 |
+| test_m2_recall.py | 5/5 | 100% | 语义召回正常 |
+| test_m3_rag.py | 6/6 + 16 回归 | 100% | RAG 知识检索正常 |
+| test_embedding.py | 6/6 | 100% | Embedding 正常 |
+| test_multi_platform.py | 全部 | 100% | 多平台并行查询正常 |
+| test_trace.py | 26/26 | 100% | 新增 skill_load 事件正常 |
+| **合计** | **11/11 文件** | **100%** | **新增 test_trace.py（+26 case）** |
+
+---
+
+## 2026-05-14 — 初始记录
+
+### test_react_engine.py
 
 | 状态 | **✓ 10/10 全部通过** |
 |------|----------------------|
@@ -23,7 +46,7 @@
 | [9/10] ShoppingContext | 状态机 add/get_missing/reset | ✓ |
 | [10/10] run — 意图路由 | 3 种意图各跑一次 | ✓ |
 
-## test_m5_shopping.py
+### test_m5_shopping.py
 
 | 状态 | **✓ 全部通过（9/9）** |
 |------|----------------------|
@@ -42,7 +65,7 @@
 | [8/9] 无关输入处理 | 连续 2 轮无关输入不消耗 question_count | ✓ |
 | [9/9] run() 路由持久性 | 续对话/话题切换/结束退出 3 场景 | ✓ |
 
-## test_query_fix.py
+### test_query_fix.py
 
 | 状态 | **✓ 全部通过** |
 |------|---------------|
@@ -57,13 +80,13 @@
 | `小米14` | ✓ | ✓ | ✓ | ✓ |
 | `小米 14` | ✓ | ✓ | ✓ | ✓ |
 
-## test_color_memory.py
+### test_color_memory.py
 
 | 状态 | **✓ 通过** |
 |------|-----------|
 | 备注 | 修复 import 顺序后运行，12 个商品颜色/内存字段正常 |
 
-## test_m1_config.py
+### test_m1_config.py
 
 | 状态 | **✓ 7/7 全部通过** |
 |------|-------------------|
@@ -78,7 +101,7 @@
 | [6/7] Prompt 模板 | decompose 1083 chars, rerank 546 chars |
 | [7/7] Settings 注入链路 | industry/mobile + 17 字段 + 未知行业回退 |
 
-## test_m2_recall.py
+### test_m2_recall.py
 
 | 状态 | **✓ 5/5 全部通过** |
 |------|-------------------|
@@ -91,7 +114,7 @@
 | [4/5] 混合召回 | gaming + budget_max=8000 → 12 个结果 |
 | [5/5] enable_vector_recall 完整流程 | 向量+规则混合，所有结果满足过滤条件 |
 
-## test_m3_rag.py
+### test_m3_rag.py
 
 | 状态 | **✓ 全部通过** |
 |------|---------------|
@@ -106,7 +129,7 @@
 | [5/6] 已有功能回归 | 16/16 回归通过 |
 | [6/6] EmbeddingClient 缓存 | 懒加载 + 缓存正确 |
 
-## test_embedding.py
+### test_embedding.py
 
 | 状态 | **✓ 6/6 全部通过** |
 |------|-------------------|
@@ -121,7 +144,7 @@
 | [5/6] 语义相似度 | 拍照-拍照 0.544，拍照-学生 0.367，Δ=0.177 |
 | [6/6] 商品召回模拟 | 2/4 命中，可调整 embedding_fields |
 
-## test_multi_platform.py
+### test_multi_platform.py
 
 | 状态 | **✓ 全部通过** |
 |------|---------------|
@@ -132,7 +155,7 @@
 | 并行查询 iPhone 15 | 16 个匹配，最便宜拼多多 ¥5750 |
 | 并行查询 小米平板6 | 4 个匹配，最便宜拼多多 ¥2099 |
 
-## 汇总
+### 汇总
 
 | 测试文件 | 通过/总数 | 通过率 |
 |----------|-----------|--------|

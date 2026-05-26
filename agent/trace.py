@@ -32,6 +32,9 @@ class EventType:
     SHOPPING_PHASE = "shopping_phase"
     SLOT_FILLED = "slot_filled"
 
+    # Skills 架构
+    SKILL_LOAD = "skill_load"
+
     # 通用
     ERROR = "error"
 
@@ -148,6 +151,12 @@ class TraceCollector:
     def slot_filled(self, slot_name: str, value, phase: str = "", **extra) -> TraceEvent:
         return self.add(EventType.SLOT_FILLED, slot=slot_name, value=str(value), phase=phase, **extra)
 
+    def skill_load(self, skills: list, prompt_chars: int, tool_count: int,
+                   mode: str = "", source: str = "preload", **extra) -> TraceEvent:
+        return self.add(EventType.SKILL_LOAD, skills=skills,
+                        prompt_chars=prompt_chars, tool_count=tool_count,
+                        mode=mode, source=source, **extra)
+
     def error(self, message: str, context: str = "", **extra) -> TraceEvent:
         return self.add(EventType.ERROR, message=message, context=context, **extra)
 
@@ -205,6 +214,9 @@ class TraceCollector:
                 lines.append(f"[Shopping] {d.get('from_phase', '')} → {d.get('phase', '')}")
             elif t == EventType.SLOT_FILLED:
                 lines.append(f"[Shopping] 槽位 {d.get('slot', '?')} = {d.get('value', '?')}")
+            elif t == EventType.SKILL_LOAD:
+                skills_str = ", ".join(d.get("skills", []))
+                lines.append(f"[Skills] 激活: {skills_str} | prompt: {d.get('prompt_chars', 0)} chars | tools: {d.get('tool_count', 0)}")
             elif t == EventType.ERROR:
                 lines.append(f"[Error] {d.get('context', '')}: {d.get('message', '')}")
         return "\n".join(lines)

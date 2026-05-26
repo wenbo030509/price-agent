@@ -253,7 +253,8 @@ def chat():
 
     try:
         # 运行Agent（传入历史上下文，如果有图片则消息包含图片URL）
-        answer = agent.run(agent_message, history=history_for_agent, verbose=True)
+        answer = agent.run(agent_message, history=history_for_agent, verbose=True,
+                          has_image=bool(image_url))
 
         # 获取推理过程：结构化 trace（新） + 原始文本（兼容旧前端）
         reasoning_output = buffer.getvalue()
@@ -306,7 +307,8 @@ def chat_stream():
 
         final_answer = ""
         try:
-            for ev in agent.run_stream(agent_message, history=history_for_agent, verbose=True):
+            for ev in agent.run_stream(agent_message, history=history_for_agent, verbose=True,
+                                        has_image=bool(image_url)):
                 event_json = json.dumps(ev.to_dict(), ensure_ascii=False)
                 yield f"data: {event_json}\n\n"
                 if ev.type == "done":

@@ -4,9 +4,11 @@ import time
 import threading
 import concurrent.futures
 from dataclasses import dataclass, field
-from typing import Dict, List, Callable, Optional, Generator
+from typing import Dict, List, Callable, Optional, Generator, Set
 from openai import OpenAI
-from .prompts import SYSTEM_PROMPT, PLAN_PROMPT_TEMPLATE
+from .prompts import (SYSTEM_PROMPT, PLAN_PROMPT_TEMPLATE,
+                       COMMON_ROLE, COMMON_RULES, COMMON_FORMAT, COMMON_ERROR_HANDLING)
+from .skills.loader import SkillLoader, SkillDef
 from .trace import TraceCollector, TraceEvent, EventType
 
 
@@ -121,6 +123,32 @@ class ReActAgent:
         # Trace 事件收集器（推理可视化）
         self.trace = TraceCollector()
 
+        # Skills 架构：LLM 按需加载 Skill（SKILL.md 文件驱动）
+        self.skill_loader = SkillLoader()
+        self._loaded_skills: Dict[str, str] = {}  # skill_name → content
+
+        # load_skill 元工具 schema（LLM 通过此工具按需加载 Skill）
+        self._load_skill_tool_schema = {
+            "type": "function",
+            "function": {
+                "name": "load_skill",
+                "description": (
+                    "加载一个专业技能模块的完整指令。当你判断当前任务需要特定领域知识或操作指南时调用。"
+                    "加载后该技能的行为指导和工具选择规则将注入到上下文中。"
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "skill_name": {
+                            "type": "string",
+                            "description": self.skill_loader.get_catalog_for_tool(),
+                        }
+                    },
+                    "required": ["skill_name"],
+                },
+            },
+        }
+
     # ── LLM 调用（含重试） ────────────────────────────────────────────
 
     def _call_llm(self, max_retries=3, **kwargs):
@@ -144,7 +172,8 @@ class ReActAgent:
         self,
         user_query: str,
         history: Optional[List[Dict]] = None,
-        verbose: bool = True
+        verbose: bool = True,
+        has_image: bool = False,
     ) -> str:
         """
         运行 Agent。根据意图分类路由到不同的执行模式。
@@ -152,11 +181,32 @@ class ReActAgent:
         - comparison：Plan-Execute
         - shopping：引导式购物 → ShoppingContext 状态机
         - query：ReAct
+
+        Skills 架构：根据意图 + 上下文按需组合 prompt + 工具子集。
         """
         self.trace.reset()
 
         if history:
             history = self._slide_window(history)
+
+        # ── 检测 /skill-name 用户显式调用 ──
+        user_skill = self._extract_user_skill_invocation(user_query)
+        if user_skill:
+            skill_name, actual_query = user_skill
+            content = self.skill_loader.get_content(skill_name)
+            if content:
+                self._loaded_skills[skill_name] = content
+                if verbose:
+                    print(f"\n[Skills] 用户调用 /{skill_name}")
+                self.trace.skill_load(
+                    skills=[skill_name],
+                    prompt_chars=len(content),
+                    tool_count=len(self._build_skill_tool_set()),
+                    mode="user_invoked", source="user",
+                )
+                user_query = actual_query or user_query  # 去掉前缀
+            elif verbose:
+                print(f"\n[Skills] 未知技能: /{skill_name}，忽略")
 
         # ── M5: 购物状态机激活时，后续输入直接路由到引导式购物 ──
         # 不再经过意图分类，避免"打游戏""预算4000"等槽位回复被误判为
@@ -178,32 +228,73 @@ class ReActAgent:
                     print(f"\n[Shopping] 购物模式续 ({self.shopping_context.phase})")
                 self.trace.intent(intent="shopping", query=user_query)
                 self.trace.mode_select(mode="shopping", reason="购物引导模式（续）", model=self.model_react)
-                return self._guided_shopping(user_query, history, verbose)
+                # Skills: 按购物阶段重新预加载
+                cont_skill_names = self._resolve_skills(
+                    "shopping", has_image=has_image,
+                    shopping_phase=self.shopping_context.phase,
+                )
+                self._preload_skills(cont_skill_names, verbose=verbose)
+                cont_prompt = self._build_skill_system_prompt()
+                self.trace.skill_load(
+                    skills=list(self._loaded_skills.keys()),
+                    prompt_chars=len(cont_prompt),
+                    tool_count=len(self._build_skill_tool_set()),
+                    mode="shopping", source="preload",
+                )
+                return self._guided_shopping(user_query, history, verbose,
+                                             system_prompt_override=cont_prompt)
 
         intent = self._detect_intent(user_query)
         self.trace.intent(intent=intent, query=user_query, model_count=self._count_models(user_query))
+
+        # ── Skills 架构：预加载 Skill + 构建 system prompt ──
+        skill_names = self._resolve_skills(
+            intent, has_image=has_image,
+            shopping_phase=self.shopping_context.phase if intent == "shopping" else "",
+        )
+        self._preload_skills(skill_names, verbose=verbose)
+
+        system_prompt = self._build_skill_system_prompt()
+        tools_subset = self._build_tool_list_from_skills()
+
+        self.trace.skill_load(
+            skills=list(self._loaded_skills.keys()),
+            prompt_chars=len(system_prompt),
+            tool_count=len(tools_subset),
+            mode=intent, source="preload",
+        )
+
+        if verbose:
+            skills_str = ", ".join(self._loaded_skills.keys()) if self._loaded_skills else "fallback(全量)"
+            print(f"[Skills] 激活: {skills_str} | prompt: {len(system_prompt)} chars | tools: {len(tools_subset)}")
 
         if intent == "recommendation":
             self.trace.mode_select(mode="react", reason="推荐型查询，启用语义推荐模式", model=self.model_react)
             if verbose:
                 print(f"\n[Intent: recommendation] 启用语义推荐模式")
-            return self._react_loop(user_query, history, verbose, intent_hint="recommendation")
+            return self._react_loop(user_query, history, verbose, intent_hint="recommendation",
+                                    system_prompt_override=system_prompt,
+                                    tools_override=tools_subset)
 
         elif intent == "comparison":
             self.trace.mode_select(mode="plan_execute", reason="对比型查询，启用 Plan-Execute 模式", model=self.model_react)
             if verbose:
                 print(f"\n[Intent: comparison] 启用 Plan-Execute 对比模式")
-            return self._plan_and_execute(user_query, history, verbose)
+            return self._plan_and_execute(user_query, history, verbose,
+                                          system_prompt_override=system_prompt)
 
         elif intent == "shopping":
             self.trace.mode_select(mode="shopping", reason="购物引导模式", model=self.model_react)
             if verbose:
                 print(f"\n[Intent: shopping] 启用引导式购物模式")
-            return self._guided_shopping(user_query, history, verbose)
+            return self._guided_shopping(user_query, history, verbose,
+                                         system_prompt_override=system_prompt)
 
         else:  # query
             self.trace.mode_select(mode="react", reason="简单查询，ReAct 模式", model=self.model_react)
-            return self._react_loop(user_query, history, verbose)
+            return self._react_loop(user_query, history, verbose,
+                                    system_prompt_override=system_prompt,
+                                    tools_override=tools_subset)
 
     # ── 流式运行 ──────────────────────────────────────────────────────
 
@@ -212,6 +303,7 @@ class ReActAgent:
         user_query: str,
         history: Optional[List[Dict]] = None,
         verbose: bool = True,
+        has_image: bool = False,
     ) -> Generator[TraceEvent, None, None]:
         """在后台线程运行 Agent，yield 实时 TraceEvent 供 SSE 消费"""
         self.trace.start_stream()
@@ -219,7 +311,7 @@ class ReActAgent:
 
         def target():
             try:
-                answer = self.run(user_query, history, verbose)
+                answer = self.run(user_query, history, verbose, has_image=has_image)
                 answer_container.append(answer)
             except Exception as e:
                 answer_container.append(f"处理出错: {e}")
@@ -336,13 +428,112 @@ class ReActAgent:
         product_hints = self._load_product_hints()
         return sum(1 for h in product_hints if h.lower() in query.lower())
 
+    # ── Skills 路由 ──────────────────────────────────────────────────────
+
+    def _resolve_skills(self, intent: str, has_image: bool = False,
+                        shopping_phase: str = "") -> Set[str]:
+        """根据意图解析需要激活的 Skill 名称集合（优化预加载，避免 load_skill 多一轮）。"""
+        skills: Set[str] = set()
+
+        if intent == "query":
+            skills.add("price_comparison")
+        elif intent == "recommendation":
+            skills.add("semantic_recommend")
+            skills.add("price_comparison")
+        elif intent == "comparison":
+            skills.add("price_comparison")
+            skills.add("rag_knowledge")
+        elif intent == "shopping":
+            skills.add("shopping_guide")
+            if shopping_phase in ("searching", "comparing"):
+                skills.add("price_comparison")
+            if shopping_phase == "recommending":
+                skills.add("semantic_recommend")
+
+        if has_image:
+            skills.add("vision_search")
+
+        return skills
+
+    def _extract_user_skill_invocation(self, query: str) -> Optional[tuple]:
+        """检测 /skill-name 前缀。返回 (skill_name, remainder) 或 None。"""
+        query = query.strip()
+        if not query.startswith("/"):
+            return None
+        parts = query[1:].split(maxsplit=1)
+        name = parts[0].lower().replace("-", "_")
+        if name not in self.skill_loader.list_skills():
+            return None
+        remainder = parts[1] if len(parts) > 1 else ""
+        return (name, remainder)
+
+    def _preload_skills(self, skill_names: Set[str], verbose: bool = False):
+        """预加载 Skill 到 _loaded_skills（不重复加载，上限 4 个）。"""
+        max_skills = 4
+        loaded = 0
+        for name in sorted(skill_names, key=lambda n: self._skill_priority(n), reverse=True):
+            if loaded >= max_skills:
+                break
+            if name not in self._loaded_skills:
+                content = self.skill_loader.get_content(name)
+                if content:
+                    self._loaded_skills[name] = content
+                    loaded += 1
+                    if verbose:
+                        print(f"  [Skills] 预加载: /{name}")
+
+    def _skill_priority(self, name: str) -> int:
+        skill = self.skill_loader.get(name)
+        return skill.priority if skill else 0
+
+    def _build_skill_system_prompt(self) -> str:
+        """从已加载 Skill 构建 system prompt。无 Skill 时回退 SYSTEM_PROMPT。"""
+        if not self._loaded_skills:
+            return SYSTEM_PROMPT
+
+        parts = [COMMON_ROLE, COMMON_RULES]
+
+        all_skills = self.skill_loader.load_all()
+        for name in self._loaded_skills:
+            skill = all_skills.get(name)
+            if skill and skill.content:
+                parts.append(skill.content)
+
+        parts.append(COMMON_FORMAT)
+        parts.append(COMMON_ERROR_HANDLING)
+        parts.append(self.skill_loader.get_catalog())
+
+        return "\n\n".join(parts)
+
+    def _build_skill_tool_set(self) -> Set[str]:
+        """已加载 Skill 所需工具名称的并集。"""
+        tool_names: Set[str] = set()
+        all_skills = self.skill_loader.load_all()
+        for name in self._loaded_skills:
+            skill = all_skills.get(name)
+            if skill:
+                tool_names.update(skill.tools)
+        return tool_names
+
+    def _build_tool_list_from_skills(self) -> List[Dict]:
+        """从已加载 Skill 筛选工具 schema 子集。无 Skill 时返回全量。"""
+        tool_names = self._build_skill_tool_set()
+        if not tool_names:
+            return list(self.tools)
+        filtered = [
+            t for t in self.tools
+            if t.get("function", {}).get("name") in tool_names
+        ]
+        return filtered if filtered else list(self.tools)
+
     # ── Plan-Execute 模式 ─────────────────────────────────────────────
 
     def _plan_and_execute(
         self,
         user_query: str,
         history: Optional[List[Dict]],
-        verbose: bool
+        verbose: bool,
+        system_prompt_override: str = "",
     ) -> str:
         """Plan-Execute 主流程"""
 
@@ -352,7 +543,8 @@ class ReActAgent:
             self.trace.mode_select(mode="react", reason="LLM 判定为简单查询，回退 ReAct", model=self.model_react)
             if verbose:
                 print(f"[Plan-Execute] LLM 判定为简单 query，回退 ReAct")
-            return self._react_loop(user_query, history, verbose)
+            return self._react_loop(user_query, history, verbose,
+                                    system_prompt_override=system_prompt_override)
 
         observations = self._execute_plan(plan, verbose)
 
@@ -851,10 +1043,20 @@ class ReActAgent:
         user_query: str,
         history: Optional[List[Dict]],
         verbose: bool,
-        intent_hint: str = "query"
+        intent_hint: str = "query",
+        system_prompt_override: str = "",
+        tools_override: Optional[List[Dict]] = None,
     ) -> str:
         """传统 ReAct 循环（含自反思纠错机制）。intent_hint 用于注入工具选择提示。"""
-        messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+        system_prompt = system_prompt_override or self._build_skill_system_prompt()
+        if tools_override is not None:
+            tools = list(tools_override)
+        else:
+            tools = self._build_tool_list_from_skills()
+        # 始终包含 load_skill 元工具
+        tools = tools + [self._load_skill_tool_schema]
+
+        messages = [{"role": "system", "content": system_prompt}]
 
         if intent_hint == "recommendation":
             messages.append({
@@ -875,7 +1077,7 @@ class ReActAgent:
             response = self._call_llm(
                 model=self.model_react,
                 messages=messages,
-                tools=self.tools,
+                tools=tools,
                 tool_choice="auto"
             )
             response_msg = response.choices[0].message
@@ -889,8 +1091,93 @@ class ReActAgent:
             if not response_msg.tool_calls:
                 return response_msg.content
 
-            # ── Fix: 处理所有 tool_calls，每条 tool_call_id 都有对应 tool 消息 ──
-            tool_call_count = len(response_msg.tool_calls)
+            # ── 分离元工具（load_skill）和正常工具 ──
+            load_skill_calls = [tc for tc in response_msg.tool_calls
+                                if tc.function.name == "load_skill"]
+            normal_calls = [tc for tc in response_msg.tool_calls
+                            if tc.function.name != "load_skill"]
+
+            if load_skill_calls and not normal_calls:
+                # 纯元工具调用：加载 Skill 后重新构建上下文，继续下一轮
+                for tc in load_skill_calls:
+                    try:
+                        meta_args = json.loads(tc.function.arguments)
+                        skill_name = meta_args.get("skill_name", "")
+                    except (json.JSONDecodeError, KeyError):
+                        skill_name = ""
+
+                    content = self.skill_loader.get_content(skill_name)
+                    if content:
+                        if len(self._loaded_skills) >= 4:
+                            # 超上限：移除最早加载的
+                            oldest = next(iter(self._loaded_skills))
+                            del self._loaded_skills[oldest]
+                        self._loaded_skills[skill_name] = content
+                        result = f"技能「{skill_name}」已加载。请使用该技能的知识指导后续操作。"
+                        if verbose:
+                            print(f"  ├─【Meta-Action】load_skill({skill_name}) → 已加载")
+                    else:
+                        result = f"错误：未找到技能「{skill_name}」。可用：{', '.join(self.skill_loader.list_skills())}"
+                        if verbose:
+                            print(f"  ├─【Meta-Action】load_skill({skill_name}) → 失败")
+
+                    self.trace.skill_load(
+                        skills=list(self._loaded_skills.keys()),
+                        prompt_chars=sum(len(c) for c in self._loaded_skills.values()),
+                        tool_count=len(self._build_skill_tool_set()),
+                        mode="llm_loaded", source="llm",
+                    )
+
+                    messages.append(response_msg)
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc.id,
+                        "content": result,
+                    })
+
+                # 重建 system prompt 和工具列表
+                new_system = self._build_skill_system_prompt()
+                tools = self._build_tool_list_from_skills() + [self._load_skill_tool_schema]
+                messages = [m for m in messages if m.get("role") != "system"]
+                messages.insert(0, {"role": "system", "content": new_system})
+                continue
+
+            # ── 混合调用（load_skill + 正常工具）：先处理 load_skill ──
+            for tc in load_skill_calls:
+                try:
+                    meta_args = json.loads(tc.function.arguments)
+                    skill_name = meta_args.get("skill_name", "")
+                except (json.JSONDecodeError, KeyError):
+                    skill_name = ""
+
+                content = self.skill_loader.get_content(skill_name)
+                if content:
+                    if len(self._loaded_skills) >= 4:
+                        oldest = next(iter(self._loaded_skills))
+                        del self._loaded_skills[oldest]
+                    self._loaded_skills[skill_name] = content
+                    meta_result = f"技能「{skill_name}」已加载。"
+                    if verbose:
+                        print(f"  ├─【Meta-Action】load_skill({skill_name}) → 已加载")
+                else:
+                    meta_result = f"错误：未找到技能「{skill_name}」。"
+                    if verbose:
+                        print(f"  ├─【Meta-Action】load_skill({skill_name}) → 失败")
+
+                self.trace.skill_load(
+                    skills=list(self._loaded_skills.keys()),
+                    prompt_chars=sum(len(c) for c in self._loaded_skills.values()),
+                    tool_count=len(self._build_skill_tool_set()),
+                    mode="llm_loaded", source="llm",
+                )
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tc.id,
+                    "content": meta_result,
+                })
+
+            # ── 处理正常工具（原有逻辑不变） ──
+            tool_call_count = len(normal_calls)
             if verbose and tool_call_count > 1:
                 print(f"【需要调用 {tool_call_count} 个工具】")
 
@@ -902,7 +1189,7 @@ class ReActAgent:
             reflect_observation = None
             reflect_retry_count = 0
 
-            for tc in response_msg.tool_calls:
+            for tc in normal_calls:
                 tool_name = tc.function.name
                 try:
                     tool_args = json.loads(tc.function.arguments)
@@ -1115,6 +1402,7 @@ class ReActAgent:
         user_query: str,
         history: Optional[List[Dict]],
         verbose: bool,
+        system_prompt_override: str = "",
     ) -> str:
         """引导式购物主流程"""
         slots_cfg = self.industry_config.get("shopping_slots", [])
@@ -1184,7 +1472,8 @@ class ReActAgent:
             return self._handle_followup(user_query)
 
         # 兜底
-        return self._react_loop(user_query, history, verbose)
+        return self._react_loop(user_query, history, verbose,
+                                system_prompt_override=system_prompt_override)
 
     def _inject_from_history(self, history, slots_cfg):
         """从历史对话提取上下文注入槽位"""
