@@ -1097,6 +1097,8 @@ class ReActAgent:
             normal_calls = [tc for tc in response_msg.tool_calls
                             if tc.function.name != "load_skill"]
 
+            appended_assistant = False
+
             if load_skill_calls and not normal_calls:
                 # 纯元工具调用：加载 Skill 后重新构建上下文，继续下一轮
                 for tc in load_skill_calls:
@@ -1128,7 +1130,7 @@ class ReActAgent:
                         mode="llm_loaded", source="llm",
                     )
 
-                    messages.append(response_msg)
+                    messages.append(response_msg.model_dump())
                     messages.append({
                         "role": "tool",
                         "tool_call_id": tc.id,
@@ -1142,7 +1144,10 @@ class ReActAgent:
                 messages.insert(0, {"role": "system", "content": new_system})
                 continue
 
-            # ── 混合调用（load_skill + 正常工具）：先处理 load_skill ──
+            # ── 混合调用（load_skill + 正常工具）：先 append assistant，再处理 tool 结果 ──
+            messages.append(response_msg.model_dump())
+            appended_assistant = True
+
             for tc in load_skill_calls:
                 try:
                     meta_args = json.loads(tc.function.arguments)
@@ -1270,7 +1275,8 @@ class ReActAgent:
                 continue
 
             # 追加 assistant 消息和全部 tool 结果
-            messages.append(response_msg)
+            if not appended_assistant:
+                messages.append(response_msg.model_dump())
             for tr in all_tool_results:
                 messages.append({
                     "role": "tool",
