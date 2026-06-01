@@ -69,6 +69,7 @@
 | M3: RAG 知识库 | BM25 + 语义混合检索，手机领域知识增强 | ✅ |
 | M4: 生成式推荐 | LLM 意图分解 + Rerank + 推荐解释（计划中） | 📋 |
 | M5: 引导式购物 Agent | ShoppingContext 状态机 + 槽位填充 + 多轮购物 | ✅ |
+| M6: Trace 数据处理工坊 | trace → SFT 训练数据集构建 + 质量评分 + LLM-Judge + 人工审核 | ✅ |
 | **推理可视化** | TraceEvent 结构化事件 + SSE 流式 + 模式可视化 + 调试仪表盘 | ✅ |
 
 ## 功能特性
@@ -108,6 +109,16 @@
   - 时间瀑布：步骤耗时水平条形图
   - 模型路由徽章：节点标题行内显示模型名称
 - **调试仪表盘**：Trace 自动保存 → 列表（按会话过滤）→ 逐步骤回放（速度 0.5x-5x）→ 性能摘要
+
+### Trace 数据处理工坊（M6）
+- **独立页面**：`/training-data`，4 步向导式处理链路
+- **Trace 列表**：分页表格（50条/页）+ 按意图/模式/工具数筛选 + 点击展开详情
+- **格式提取**：Trace → OpenAI SFT fine-tuning JSONL，左右对比视图 + 在线编辑
+- **质量评分**：从业务视角评估（Agent 能力展现/执行质量/回答可信度/数据完整度）
+- **LLM-as-Judge**：调用 DeepSeek 从 5 个维度（工具选择/参数提取/数据引用/回答质量/训练价值）评估样本质量
+- **人工审核**：卡片式审核列表 + ✓通过/✗拒绝 + 按状态筛选 + 批量操作
+- **JSONL 导出**：符合 OpenAI Chat Completions fine-tuning 格式，可对接 HuggingFace TRL / Unsloth
+- **处理规模**：188 条 Trace → ~52 条高价值训练样本（≥70分）
 
 ### Skills 架构（Prompt 按需组合）
 - **SKILL.md 驱动**：5 个技能模块（比价/图片搜索/语义推荐/RAG 知识/购物引导），YAML frontmatter + markdown 定义
@@ -185,6 +196,8 @@ price-agent/
   knowledge/mobile/        ← 手机领域知识库（M3）
     processors/            ← 芯片对比文档
     reviews/               ← 机型评测文档
+  scripts/
+    training_data.py       ← M6 Trace 数据处理 + 质量评分 + LLM-Judge（~680行）
   tests/
     test_trace.py          ← L1/L2 结构化事件 + SSE 流式测试（72 用例）
     conftest.py            ← pytest fixtures（client/indexer/retriever/agent）
@@ -194,8 +207,13 @@ price-agent/
     test_m5_shopping.py    ← M5 购物测试
     test_react_engine.py   ← ReActEngine 核心测试
   eval/                    ← 评估框架（P0-P6 + IT3C 回归套件）
-    results/traces/        ← L4 自动保存的 trace 文件
+    results/traces/        ← L4 自动保存的 trace 文件（~188条）
+  templates/
+    training.html          ← M6 Trace 数据处理工坊页面
+  static/js/
+    training.js            ← M6 工坊前端交互逻辑（~630行）
   docs/modules/            ← 模块详细设计文档
+  docs/trace-data-processing-plan.md  ← M6 完整方案文档
 ```
 
 ## 文档

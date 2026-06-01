@@ -26,6 +26,7 @@ from platforms import (
     format_comparison_result,
     PlatformDatabase
 )
+from scripts.training_data import list_traces as list_training_traces, extract_sample, export_jsonl, judge_sample
 
 
 app = Flask(__name__)
@@ -714,6 +715,194 @@ def upload_image():
         "success": True,
         "image_url": f"/static/uploads/{filename}",
     })
+
+
+@app.route('/training-data')
+def training_data_page():
+    """Trace 数据处理工坊页面"""
+    return render_template('training.html')
+
+
+@app.route('/api/training/traces', methods=['GET'])
+def api_training_traces():
+    """列出所有 trace 及其元数据，供训练数据工坊筛选"""
+    try:
+        trace_list = list_training_traces()
+        result = []
+        for t in trace_list:
+            result.append({
+                "filename": t.filename,
+                "query": t.query,
+                "timestamp": t.timestamp,
+                "session_id": t.session_id,
+                "intent": t.intent,
+                "mode": t.mode,
+                "tool_count": t.tool_count,
+                "round_count": t.round_count,
+                "has_error": t.has_error,
+                "answer_length": t.answer_length,
+                "answer_preview": t.answer_preview,
+                "event_count": t.event_count,
+            })
+        return jsonify({"success": True, "traces": result, "total": len(result)})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/training/extract', methods=['POST'])
+def api_training_extract():
+    """从选中的 trace 文件提取训练样本"""
+    data = request.get_json()
+    if not data:
+        return jsonify({"success": False, "error": "请求体为空"}), 400
+
+    filenames = data.get("filenames", [])
+    if not filenames:
+        return jsonify({"success": False, "error": "未选择 trace 文件"}), 400
+
+    samples = []
+    errors = []
+    for fname in filenames:
+        if ".." in fname or "/" in fname:
+            errors.append(f"{fname}: 无效文件名")
+            continue
+        fpath = os.path.join(TRACE_DIR, fname)
+        if not os.path.isfile(fpath):
+            errors.append(f"{fname}: 文件不存在")
+            continue
+        sample = extract_sample(fpath)
+        if sample:
+            samples.append({
+                "filename": sample.filename,
+                "query": sample.query,
+                "intent": sample.intent,
+                "mode": sample.mode,
+                "messages": sample.messages,
+                "tools": sample.tools,
+                "quality_score": sample.quality_score,
+                "quality_details": sample.quality_details,
+                "tool_count": sample.tool_count,
+                "round_count": sample.round_count,
+                "metadata": sample.metadata,
+                "message_count": len(sample.messages),
+                "has_tool_calls": any(
+                    m.get("tool_calls") for m in sample.messages if m["role"] == "assistant"
+                ),
+            })
+        else:
+            errors.append(f"{fname}: 提取失败")
+
+    # 统计
+    total_score = sum(s["quality_score"] for s in samples) if samples else 0
+    avg_score = round(total_score / len(samples), 1) if samples else 0
+
+    return jsonify({
+        "success": True,
+        "samples": samples,
+        "errors": errors,
+        "stats": {
+            "total_samples": len(samples),
+            "total_errors": len(errors),
+            "avg_quality_score": avg_score,
+            "score_distribution": _compute_score_distribution(samples),
+            "intent_distribution": _compute_distribution(samples, "intent"),
+            "mode_distribution": _compute_distribution(samples, "mode"),
+            "total_tool_calls": sum(s["tool_count"] for s in samples),
+            "avg_messages": round(sum(s["message_count"] for s in samples) / len(samples), 1) if samples else 0,
+            "samples_with_tools": sum(1 for s in samples if s["has_tool_calls"]),
+            "samples_without_tools": sum(1 for s in samples if not s["has_tool_calls"]),
+        },
+    })
+
+
+@app.route('/api/training/export', methods=['POST'])
+def api_training_export():
+    """导出过滤后的样本为 JSONL 文件"""
+    data = request.get_json()
+    if not data:
+        return jsonify({"success": False, "error": "请求体为空"}), 400
+
+    samples_data = data.get("samples", [])
+    min_score = data.get("min_score", 0)
+    require_tools = data.get("require_tools", False)
+
+    if not samples_data:
+        return jsonify({"success": False, "error": "无样本数据"}), 400
+
+    # 重建 TrainingSample 并过滤
+    valid_samples = []
+    for sd in samples_data:
+        if sd.get("quality_score", 0) < min_score:
+            continue
+        if require_tools and not sd.get("has_tool_calls"):
+            continue
+        # 从 messages 重建基本 TrainingSample
+        s = type('TrainingSample', (), {
+            'messages': sd.get("messages", []),
+            'tools': sd.get("tools", []),
+            'tool_count': sd.get("tool_count", 0),
+            'quality_score': sd.get("quality_score", 0),
+        })()
+        valid_samples.append(s)
+
+    jsonl_content = export_jsonl(valid_samples)
+
+    return Response(
+        jsonl_content,
+        mimetype="application/x-ndjson",
+        headers={
+            "Content-Disposition": f"attachment; filename=training_data_{len(valid_samples)}samples.jsonl",
+            "X-Export-Count": str(len(valid_samples)),
+            "X-Total-Size": str(len(jsonl_content)),
+        },
+    )
+
+
+def _compute_score_distribution(samples):
+    """计算质量分分布"""
+    bins = {"90-100": 0, "80-89": 0, "70-79": 0, "60-69": 0, "<60": 0}
+    for s in samples:
+        sc = s["quality_score"]
+        if sc >= 90:
+            bins["90-100"] += 1
+        elif sc >= 80:
+            bins["80-89"] += 1
+        elif sc >= 70:
+            bins["70-79"] += 1
+        elif sc >= 60:
+            bins["60-69"] += 1
+        else:
+            bins["<60"] += 1
+    return bins
+
+
+def _compute_distribution(samples, key):
+    """计算分类分布"""
+    dist = {}
+    for s in samples:
+        val = s.get(key, "unknown") or "unknown"
+        dist[val] = dist.get(val, 0) + 1
+    return dist
+
+
+@app.route('/api/training/judge', methods=['POST'])
+def api_training_judge():
+    """用 LLM 评估单个训练样本的质量"""
+    data = request.get_json()
+    if not data:
+        return jsonify({"success": False, "error": "请求体为空"}), 400
+
+    sample = data.get("sample")
+    if not sample:
+        return jsonify({"success": False, "error": "未提供样本数据"}), 400
+
+    try:
+        result = judge_sample(sample)
+        return jsonify({"success": True, "judge": result})
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"success": False, "error": f"评估失败: {str(e)}"}), 500
 
 
 @app.teardown_appcontext

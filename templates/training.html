@@ -1,0 +1,687 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trace 数据处理工坊 — Price Agent</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&family=Noto+Serif+SC:wght@600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        /* ── Training Page Specific Styles ── */
+        .training-page {
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            background: var(--bg-page);
+            font-family: 'Noto Sans SC', -apple-system, sans-serif;
+        }
+        .training-header {
+            background: var(--bg-dark);
+            padding: 16px 32px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid rgba(255,255,255,0.08);
+            flex-shrink: 0;
+        }
+        .training-header .logo {
+            font-family: 'Noto Serif SC', serif;
+            font-size: 20px; font-weight: 700; color: #fff;
+        }
+        .training-header .logo span { color: var(--brand); }
+        .training-header .back-link {
+            color: var(--text-inverse-dim); text-decoration: none;
+            font-size: 14px; transition: color .2s;
+        }
+        .training-header .back-link:hover { color: #fff; }
+
+        .training-container {
+            max-width: 1200px; width: 100%;
+            margin: 0 auto; padding: 24px 24px 0;
+            flex: 1; display: flex; flex-direction: column; overflow: hidden;
+        }
+
+        /* ── Step Wizard ── */
+        .step-wizard {
+            display: flex; align-items: center; justify-content: center;
+            gap: 0; margin-bottom: 20px; flex-shrink: 0;
+        }
+        .step-item {
+            display: flex; align-items: center; gap: 10px;
+            padding: 12px 20px; border-radius: var(--radius-md);
+            background: #fff; border: 2px solid var(--border);
+            transition: all .3s; cursor: default;
+        }
+        .step-item.active { border-color: var(--brand); background: var(--brand-bg); }
+        .step-item.done { border-color: var(--success); background: var(--success-bg); }
+        .step-num {
+            width: 32px; height: 32px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-weight: 700; font-size: 14px;
+            background: var(--border); color: var(--text-secondary);
+            transition: all .3s;
+        }
+        .step-item.active .step-num { background: var(--brand); color: #fff; }
+        .step-item.done .step-num { background: var(--success); color: #fff; }
+        .step-label { font-size: 14px; font-weight: 500; color: var(--text-secondary); }
+        .step-item.active .step-label { color: var(--text-primary); }
+        .step-item.done .step-label { color: var(--success); }
+        .step-connector {
+            width: 40px; height: 2px; background: var(--border);
+            margin: 0 4px; transition: background .3s;
+        }
+        .step-connector.done { background: var(--success); }
+
+        /* ── Step Content (flex column: body scrolls, actions fixed) ── */
+        .step-content {
+            background: #fff; border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+            box-shadow: var(--shadow-md);
+            flex: 1; display: flex; flex-direction: column;
+            min-height: 0; overflow: hidden;
+        }
+        .step-body {
+            flex: 1; overflow-y: auto; min-height: 0;
+            padding: 28px 28px 0;
+        }
+        .step-content .step-actions {
+            flex-shrink: 0;
+            display: flex; justify-content: space-between;
+            padding: 16px 28px;
+            border-top: 1px solid var(--border);
+            background: #fff;
+        }
+        .step-content h3 {
+            font-size: 20px; font-weight: 600;
+            margin-bottom: 8px; color: var(--text-primary);
+        }
+        .step-content .step-desc {
+            color: var(--text-secondary); font-size: 14px; margin-bottom: 24px;
+        }
+
+        /* ── Step 1: Trace Table ── */
+        .filter-bar {
+            display: flex; gap: 12px; flex-wrap: wrap; align-items: center;
+            margin-bottom: 16px; padding: 12px 16px;
+            background: var(--bg-input); border-radius: var(--radius-md);
+        }
+        .filter-bar select {
+            border: 1px solid var(--border); border-radius: var(--radius-sm);
+            padding: 8px 12px; font-size: 13px; background: #fff;
+        }
+        .trace-table-wrapper {
+            flex: 1; overflow-y: auto; min-height: 0;
+            border: 1px solid var(--border); border-radius: var(--radius-md);
+            margin-bottom: 12px;
+        }
+        table.trace-table {
+            width: 100%; border-collapse: collapse;
+            font-size: 13px;
+        }
+        table.trace-table thead {
+            position: sticky; top: 0; z-index: 2;
+        }
+        table.trace-table th {
+            background: var(--bg-input); padding: 10px 12px;
+            text-align: left; font-weight: 600; font-size: 12px;
+            color: var(--text-secondary); border-bottom: 2px solid var(--border);
+            white-space: nowrap; user-select: none;
+        }
+        table.trace-table td {
+            padding: 10px 12px;
+            border-bottom: 1px solid var(--border-light);
+            vertical-align: middle;
+        }
+        table.trace-table tbody tr {
+            cursor: pointer; transition: background .15s;
+        }
+        table.trace-table tbody tr:hover { background: var(--bg-hover); }
+        table.trace-table tbody tr.selected { background: var(--brand-bg); }
+        table.trace-table tbody tr.selected td { border-bottom-color: var(--brand-border); }
+        table.trace-table .tc-checkbox {
+            width: 36px; text-align: center;
+        }
+        table.trace-table .tc-checkbox input { cursor: pointer; accent-color: var(--brand); width: 16px; height: 16px; }
+        table.trace-table .tc-query {
+            max-width: 320px; overflow: hidden;
+            text-overflow: ellipsis; white-space: nowrap;
+            color: var(--text-primary); font-weight: 500;
+        }
+        table.trace-table .tc-timestamp {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px; color: var(--text-secondary);
+            white-space: nowrap;
+        }
+        table.trace-table .badge {
+            padding: 2px 10px; border-radius: var(--radius-full);
+            font-size: 11px; font-weight: 500; white-space: nowrap;
+        }
+        .badge-intent { background: #EDE9FE; color: #7C3AED; }
+        .badge-mode { background: #DBEAFE; color: #2563EB; }
+        .badge-tools { background: #D1FAE5; color: #059669; }
+        .badge-no-tools { background: #FEE2E2; color: #DC2626; }
+
+        /* Trace detail row */
+        .trace-detail {
+            background: var(--bg-input); border-bottom: 2px solid var(--brand-border);
+        }
+        .trace-detail td { padding: 16px 20px; }
+        .trace-detail .detail-grid {
+            display: grid; grid-template-columns: 1fr 1fr;
+            gap: 12px 24px; font-size: 13px;
+        }
+        .trace-detail .detail-item {
+            display: flex; flex-direction: column; gap: 2px;
+        }
+        .trace-detail .detail-label {
+            font-size: 11px; font-weight: 600; color: var(--text-tertiary);
+            text-transform: uppercase; letter-spacing: .5px;
+        }
+        .trace-detail .detail-value {
+            color: var(--text-primary); word-break: break-all;
+        }
+        .trace-detail .detail-answer {
+            grid-column: 1 / -1;
+            max-height: 120px; overflow-y: auto;
+            background: #fff; border-radius: var(--radius-sm);
+            padding: 10px 14px; font-size: 13px;
+            line-height: 1.6; white-space: pre-wrap;
+            color: var(--text-primary);
+        }
+        .trace-detail .detail-events {
+            grid-column: 1 / -1;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            max-height: 100px; overflow-y: auto;
+            background: #1e1e2e; color: #cdd6f4;
+            border-radius: var(--radius-sm);
+            padding: 10px 14px;
+            line-height: 1.5; white-space: pre-wrap;
+        }
+
+        /* Pagination */
+        .pagination-bar {
+            display: flex; align-items: center; justify-content: center;
+            gap: 6px; padding: 8px 0 4px; flex-shrink: 0;
+        }
+        .pagination-bar button {
+            border: 1px solid var(--border); border-radius: var(--radius-sm);
+            padding: 6px 12px; background: #fff;
+            font-size: 13px; cursor: pointer; transition: all .15s;
+        }
+        .pagination-bar button:hover:not(:disabled) { border-color: var(--brand); color: var(--brand); }
+        .pagination-bar button:disabled { opacity: .4; cursor: default; }
+        .pagination-bar button.active {
+            background: var(--brand); color: #fff; border-color: var(--brand);
+            font-weight: 600;
+        }
+        .pagination-bar .page-info {
+            font-size: 13px; color: var(--text-secondary); margin: 0 8px;
+        }
+
+        .selection-summary {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 10px 16px; flex-shrink: 0;
+            background: var(--brand-bg); border-radius: var(--radius-md);
+            font-size: 14px; font-weight: 500; color: var(--brand-dark);
+            margin-top: 8px;
+        }
+
+        /* ── Step 2: Sample Preview ── */
+        .format-compare {
+            display: grid; grid-template-columns: 1fr 1fr;
+            gap: 16px; margin-bottom: 20px;
+        }
+        .format-panel {
+            border: 1px solid var(--border);
+            border-radius: var(--radius-md); overflow: hidden;
+        }
+        .format-panel .panel-header {
+            padding: 10px 14px; font-size: 13px; font-weight: 600;
+            background: var(--bg-input); border-bottom: 1px solid var(--border);
+            display: flex; align-items: center; justify-content: space-between;
+        }
+        .format-panel .panel-body {
+            padding: 14px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px; line-height: 1.5;
+            max-height: 450px; overflow-y: auto;
+            white-space: pre-wrap; word-break: break-all;
+            background: #1e1e2e; color: #cdd6f4;
+        }
+        .sample-nav {
+            display: flex; gap: 8px; align-items: center;
+            margin-bottom: 16px;
+        }
+        .sample-nav button {
+            border: 1px solid var(--border); border-radius: var(--radius-sm);
+            padding: 6px 14px; background: #fff;
+            font-size: 13px; cursor: pointer; transition: all .2s;
+        }
+        .sample-nav button:hover { border-color: var(--brand); }
+        .sample-nav .sample-counter {
+            font-size: 14px; font-weight: 500;
+            margin: 0 8px; color: var(--text-primary);
+        }
+
+        /* ── Step 3: Review Toolbar & List ── */
+        .review-toolbar {
+            display: flex; align-items: center; gap: 14px;
+            padding: 10px 16px; flex-shrink: 0;
+            background: var(--bg-input); border-radius: var(--radius-md);
+            margin-bottom: 10px; flex-wrap: wrap;
+            border: 1px solid var(--border);
+        }
+        .review-stats {
+            display: flex; gap: 14px; font-size: 12px; color: var(--text-secondary);
+        }
+        .review-stats strong { color: var(--text-primary); font-size: 13px; }
+        .review-stats .stat-pass strong { color: var(--success); }
+        .review-stats .stat-review strong { color: var(--brand); }
+        .review-stats .stat-approved strong { color: #7C3AED; }
+        .review-threshold {
+            display: flex; align-items: center; gap: 4px;
+            border-left: 1px solid var(--border); padding-left: 10px;
+        }
+        .review-toggle {
+            font-size: 12px; display: flex; align-items: center; gap: 4px;
+            cursor: pointer; white-space: nowrap;
+        }
+        .review-filters {
+            display: flex; gap: 2px;
+            border-left: 1px solid var(--border); padding-left: 8px;
+        }
+        .review-filters button {
+            border: none; background: none; padding: 4px 10px;
+            font-size: 12px; border-radius: var(--radius-sm);
+            cursor: pointer; color: var(--text-secondary); transition: all .15s;
+        }
+        .review-filters button:hover { background: var(--bg-hover); }
+        .review-filters button.active {
+            background: var(--brand); color: #fff; font-weight: 600;
+        }
+        .review-actions {
+            display: flex; gap: 6px; margin-left: auto;
+            border-left: 1px solid var(--border); padding-left: 10px;
+        }
+
+        /* Review list */
+        .review-list {
+            flex: 1; overflow-y: auto; min-height: 0;
+            border: 1px solid var(--border); border-radius: var(--radius-md);
+        }
+        .review-card {
+            border-bottom: 1px solid var(--border-light);
+            transition: background .15s; background: #fff;
+        }
+        .review-card:last-child { border-bottom: none; }
+        .review-card:hover { background: var(--bg-hover); }
+        .review-card.rejected-card { background: #fef2f2; }
+        .review-card .rc-main {
+            display: flex; align-items: center; gap: 14px;
+            padding: 10px 14px; cursor: pointer;
+        }
+        .review-card .rc-query {
+            flex: 1; min-width: 0;
+            font-size: 13px; font-weight: 500; color: var(--text-primary);
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .review-card .rc-scores {
+            display: flex; gap: 10px; flex-shrink: 0;
+        }
+        .review-card .rc-score {
+            text-align: center; min-width: 40px;
+        }
+        .review-card .rc-score .val {
+            font-size: 15px; font-weight: 700;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .review-card .rc-score .lbl {
+            font-size: 10px; color: var(--text-tertiary);
+        }
+        .rc-score.heuristic .val { color: var(--text-primary); }
+        .rc-score.llm .val { color: #7C3AED; }
+        .rc-score.heuristic.low .val { color: var(--error); }
+
+        .review-card .rc-status {
+            padding: 2px 10px; border-radius: var(--radius-full);
+            font-size: 11px; font-weight: 600; flex-shrink: 0;
+            min-width: 56px; text-align: center;
+        }
+        .rc-status.pending { background: #F1F5F9; color: #64748B; }
+        .rc-status.approved { background: var(--success-bg); color: var(--success); }
+        .rc-status.rejected { background: var(--error-bg); color: var(--error); }
+
+        .review-card .rc-actions {
+            display: flex; gap: 4px; flex-shrink: 0;
+        }
+        .review-card .rc-actions button {
+            border: 1px solid var(--border); background: #fff;
+            border-radius: var(--radius-sm); padding: 3px 10px;
+            font-size: 11px; cursor: pointer; transition: all .15s;
+        }
+        .review-card .rc-actions button:hover { border-color: var(--brand); }
+        .review-card .rc-actions .btn-approve:hover { background: var(--success-bg); border-color: var(--success); color: var(--success); }
+        .review-card .rc-actions .btn-reject:hover { background: var(--error-bg); border-color: var(--error); color: var(--error); }
+
+        /* Expanded detail */
+        .review-card .rc-detail {
+            display: none; padding: 0 14px 14px 14px;
+            border-top: 1px dashed var(--border-light);
+        }
+        .review-card.expanded .rc-detail { display: block; }
+        .rc-detail-grid {
+            display: grid; grid-template-columns: 1fr 1fr;
+            gap: 8px 20px; font-size: 12px; margin-top: 10px;
+        }
+        .rc-detail-grid .item {
+            display: flex; flex-direction: column; gap: 2px;
+        }
+        .rc-detail-grid .item .lbl {
+            font-size: 10px; font-weight: 600; color: var(--text-tertiary);
+            text-transform: uppercase; letter-spacing: .5px;
+        }
+        .rc-detail-answer {
+            margin-top: 8px; max-height: 100px; overflow-y: auto;
+            background: #fff; border: 1px solid var(--border-light);
+            border-radius: var(--radius-sm); padding: 8px 12px;
+            font-size: 12px; line-height: 1.5; white-space: pre-wrap;
+            color: var(--text-secondary);
+        }
+
+        /* ── Step 4: Export ── */
+        .export-preview {
+            background: #1e1e2e; border-radius: var(--radius-md);
+            padding: 20px; font-family: 'JetBrains Mono', monospace;
+            font-size: 12px; line-height: 1.6;
+            max-height: 500px; overflow-y: auto;
+            color: #cdd6f4; white-space: pre-wrap; word-break: break-all;
+        }
+        .export-stats-grid {
+            display: grid; grid-template-columns: repeat(4, 1fr);
+            gap: 12px; margin-bottom: 24px;
+        }
+        .estat-card {
+            padding: 16px; border-radius: var(--radius-md);
+            background: var(--bg-input); border: 1px solid var(--border);
+            text-align: center;
+        }
+        .estat-card .estat-value {
+            font-size: 24px; font-weight: 700;
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--text-primary);
+        }
+        .estat-card .estat-label {
+            font-size: 12px; color: var(--text-secondary); margin-top: 4px;
+        }
+
+        /* ── Buttons ── */
+        .btn-brand {
+            background: var(--brand); color: #fff; border: none;
+            padding: 10px 24px; border-radius: var(--radius-sm);
+            font-size: 14px; font-weight: 500; cursor: pointer;
+            transition: background .2s;
+        }
+        .btn-brand:hover { background: var(--brand-dark); }
+        .btn-brand:disabled { background: var(--text-tertiary); cursor: not-allowed; }
+        .btn-outline {
+            background: #fff; color: var(--text-primary);
+            border: 1px solid var(--border);
+            padding: 10px 24px; border-radius: var(--radius-sm);
+            font-size: 14px; font-weight: 500; cursor: pointer;
+            transition: all .2s;
+        }
+        .btn-outline:hover { border-color: var(--brand); color: var(--brand); }
+        .btn-sm {
+            padding: 4px 10px; font-size: 12px;
+        }
+
+        .empty-state {
+            text-align: center; padding: 60px 20px; color: var(--text-tertiary);
+        }
+        .empty-state .icon { font-size: 48px; margin-bottom: 12px; }
+
+        .warning-note {
+            padding: 12px; background: var(--warning-bg);
+            border-radius: var(--radius-sm);
+            font-size: 12px; color: var(--warning);
+        }
+    </style>
+</head>
+<body class="training-page">
+
+<!-- ── Header ── -->
+<header class="training-header">
+    <div class="logo">Trace <span>数据处理工坊</span></div>
+    <a href="/" class="back-link">← 返回聊天</a>
+</header>
+
+<div class="training-container">
+
+    <!-- ── Step Wizard ── -->
+    <div class="step-wizard">
+        <div class="step-item active" id="stepInd1"><div class="step-num">1</div><div class="step-label">选择 Trace</div></div>
+        <div class="step-connector" id="stepConn1"></div>
+        <div class="step-item" id="stepInd2"><div class="step-num">2</div><div class="step-label">格式提取</div></div>
+        <div class="step-connector" id="stepConn2"></div>
+        <div class="step-item" id="stepInd3"><div class="step-num">3</div><div class="step-label">质量过滤</div></div>
+        <div class="step-connector" id="stepConn3"></div>
+        <div class="step-item" id="stepInd4"><div class="step-num">4</div><div class="step-label">导出数据集</div></div>
+    </div>
+
+    <!-- ════════════════════════════════════════════════════════
+         Step 1: Select Traces
+         ════════════════════════════════════════════════════════ -->
+    <div class="step-content" id="step1Content">
+        <div class="step-body">
+            <h3>Step 1 — 选择 Trace 源</h3>
+            <p class="step-desc">从已有的 Agent 运行记录中选择用于构建训练数据集的 Trace。支持按意图、模式和日期筛选，点击行查看详情。</p>
+
+            <div class="filter-bar">
+                <select id="filterIntent" onchange="applyFilters()">
+                    <option value="">全部意图</option>
+                    <option value="comparison">比价对比</option>
+                    <option value="shopping">引导购物</option>
+                    <option value="recommendation">商品推荐</option>
+                    <option value="query">信息查询</option>
+                </select>
+                <select id="filterMode" onchange="applyFilters()">
+                    <option value="">全部模式</option>
+                    <option value="react">ReAct</option>
+                    <option value="plan_execute">Plan-Execute</option>
+                    <option value="shopping">Shopping</option>
+                </select>
+                <select id="filterTools" onchange="applyFilters()">
+                    <option value="">全部工具数</option>
+                    <option value="0">无工具调用</option>
+                    <option value="1">≥ 1 个工具</option>
+                    <option value="2">≥ 2 个工具</option>
+                    <option value="3">≥ 3 个工具</option>
+                </select>
+                <button class="btn-outline btn-sm" onclick="selectAllTraces()">全选</button>
+                <button class="btn-outline btn-sm" onclick="deselectAllTraces()">取消全选</button>
+                <span style="font-size:13px;color:var(--text-secondary);margin-left:auto;" id="traceCountLabel">加载中...</span>
+            </div>
+
+            <div class="trace-table-wrapper">
+                <table class="trace-table">
+                    <thead>
+                        <tr>
+                            <th class="tc-checkbox"><input type="checkbox" id="selectAllCheckbox" onchange="toggleSelectAll(this.checked)" title="全选当前页"></th>
+                            <th>时间</th>
+                            <th>查询内容</th>
+                            <th>意图</th>
+                            <th>模式</th>
+                            <th>工具</th>
+                        </tr>
+                    </thead>
+                    <tbody id="traceTableBody">
+                        <tr><td colspan="6"><div class="empty-state"><div class="icon">⏳</div><p>加载 Trace 列表中...</p></div></td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="pagination-bar" id="paginationBar"></div>
+
+            <div class="selection-summary" id="selectionSummary">
+                已选 <strong id="selectedCount">0</strong> 条 Trace — 预计生成 <strong id="estimatedSamples">0</strong> 个训练样本
+            </div>
+        </div>
+
+        <div class="step-actions">
+            <div></div>
+            <button class="btn-brand" id="btnToStep2" disabled onclick="goToStep2()">下一步：格式提取 →</button>
+        </div>
+    </div>
+
+    <!-- ════════════════════════════════════════════════════════
+         Step 2: Format Extraction
+         ════════════════════════════════════════════════════════ -->
+    <div class="step-content" id="step2Content" style="display:none;">
+        <div class="step-body">
+            <h3>Step 2 — 格式提取预览</h3>
+            <p class="step-desc">查看原始 Trace 事件如何被转换为 OpenAI SFT fine-tuning 训练格式。支持在线编辑训练数据并实时预览。</p>
+
+            <div class="sample-nav">
+                <button onclick="prevSample()">← 上一个</button>
+                <span class="sample-counter" id="sampleCounter">样本 1 / 0</span>
+                <button onclick="nextSample()">下一个 →</button>
+                <div style="flex:1;"></div>
+                <span style="font-size:13px;color:var(--text-secondary);">质量分: <strong style="color:var(--brand);" id="sampleScore">-</strong></span>
+                <button class="btn-outline btn-sm" onclick="openEditModal()" style="margin-left:8px;">✏️ 编辑</button>
+            </div>
+
+            <div class="format-compare">
+                <div class="format-panel">
+                    <div class="panel-header">📋 原始 Trace 事件摘要</div>
+                    <div class="panel-body" id="traceEventPreview">请选择一个样本</div>
+                </div>
+                <div class="format-panel">
+                    <div class="panel-header">🎯 训练 JSONL 格式 (OpenAI SFT)</div>
+                    <div class="panel-body" id="jsonlPreview">请选择一个样本</div>
+                </div>
+            </div>
+
+            <div class="warning-note">
+                ⚠️ 当前为 <strong>MVP 演示版本</strong>，tool response 内容从 Trace 事件重建（截断300字符）。完整版需在 <code>react_engine.py</code> 中保存完整 messages。
+            </div>
+        </div>
+
+        <div class="step-actions">
+            <button class="btn-outline" onclick="goToStep1()">← 返回选择</button>
+            <button class="btn-brand" onclick="goToStep3()">下一步：质量评估 →</button>
+        </div>
+    </div>
+
+    <!-- ════════════════════════════════════════════════════════
+         Step 3: Quality Assessment + Review
+         ════════════════════════════════════════════════════════ -->
+    <div class="step-content" id="step3Content" style="display:none;">
+        <div class="step-body" style="display:flex;flex-direction:column;padding-bottom:0;">
+            <h3>Step 3 — 质量评估与审核</h3>
+
+            <!-- ── 统一工具栏 ── -->
+            <div class="review-toolbar">
+                <!-- 统计 -->
+                <div class="review-stats" id="reviewStatsCompact">
+                    <span><strong id="qsTotal">-</strong> 样本</span>
+                    <span>均分 <strong id="qsAvg">-</strong></span>
+                    <span class="stat-pass">通过 <strong id="qsPass">-</strong></span>
+                    <span class="stat-review">已审 <strong id="qsReviewed">0</strong></span>
+                    <span class="stat-approved">采纳 <strong id="qsApproved">0</strong></span>
+                </div>
+
+                <!-- 阈值滑块（紧凑） -->
+                <div class="review-threshold">
+                    <span style="font-size:11px;color:var(--text-tertiary);white-space:nowrap;">阈值</span>
+                    <input type="range" id="thresholdSlider" min="0" max="100" value="60" step="5"
+                           oninput="updateThreshold(this.value)" style="width:80px;accent-color:var(--brand);">
+                    <strong id="thresholdLabel" style="font-size:13px;min-width:24px;">60</strong>
+                </div>
+
+                <!-- 过滤开关 -->
+                <label class="review-toggle"><input type="checkbox" id="requireTools" onchange="updateThreshold()">含工具</label>
+
+                <!-- 审核筛选 -->
+                <div class="review-filters">
+                    <button onclick="filterReview('all')" id="reviewFilterAll" class="active">全部</button>
+                    <button onclick="filterReview('pending')" id="reviewFilterPending">待审核</button>
+                    <button onclick="filterReview('approved')" id="reviewFilterApproved">已通过</button>
+                    <button onclick="filterReview('rejected')" id="reviewFilterRejected">已拒绝</button>
+                </div>
+
+                <!-- 操作按钮 -->
+                <div class="review-actions">
+                    <button class="btn-outline btn-sm" id="btnJudgeCurrent" onclick="runLLMJudge('current')" title="用 LLM 评估当前 Step 2 预览的样本">🤖 评估当前</button>
+                    <button class="btn-brand btn-sm" id="btnJudgeAll" onclick="runLLMJudge('all')" title="对所有样本逐一调用 LLM 评估">🤖 批量 LLM 评估</button>
+                    <button class="btn-outline btn-sm" onclick="approveAllFiltered()">✓ 全部通过</button>
+                </div>
+            </div>
+
+            <!-- ── LLM Judge 状态条（运行时显示） ── -->
+            <div id="judgeStatus" style="display:none;padding:8px 14px;background:var(--brand-bg);border-radius:var(--radius-sm);font-size:13px;color:var(--brand-dark);margin-bottom:10px;flex-shrink:0;"></div>
+
+            <!-- ── 审核列表（主体，flex-1 填满剩余高度） ── -->
+            <div class="review-list" id="reviewList">
+                <div class="empty-state"><div class="icon">📭</div><p>加载中...</p></div>
+            </div>
+        </div>
+
+        <div class="step-actions">
+            <button class="btn-outline" onclick="goToStep2()">← 返回预览</button>
+            <button class="btn-brand" id="btnToStep4" onclick="goToStep4()">下一步：导出数据集 →</button>
+        </div>
+    </div>
+
+    <!-- ════════════════════════════════════════════════════════
+         Step 4: Export
+         ════════════════════════════════════════════════════════ -->
+    <div class="step-content" id="step4Content" style="display:none;">
+        <div class="step-body">
+            <h3>Step 4 — 导出数据集</h3>
+            <p class="step-desc">预览并下载处理好的训练数据集。数据格式为 OpenAI SFT fine-tuning JSONL，可直接用于 HuggingFace TRL / Unsloth / Axolotl 训练。</p>
+
+            <div class="export-stats-grid">
+                <div class="estat-card"><div class="estat-value" id="esSamples">-</div><div class="estat-label">导出样本数</div></div>
+                <div class="estat-card"><div class="estat-value" id="esFileSize">-</div><div class="estat-label">文件大小</div></div>
+                <div class="estat-card"><div class="estat-value" id="esAvgScore">-</div><div class="estat-label">平均质量分</div></div>
+                <div class="estat-card"><div class="estat-value" id="esToolCalls">-</div><div class="estat-label">总工具调用数</div></div>
+            </div>
+
+            <div style="margin-bottom:8px;font-size:14px;font-weight:500;color:var(--text-primary);">JSONL 预览（前 3 条）</div>
+            <div class="export-preview" id="exportPreview">请调整过滤条件后生成预览</div>
+        </div>
+
+        <div class="step-actions">
+            <button class="btn-outline" onclick="goToStep3()">← 返回过滤</button>
+            <button class="btn-brand" id="btnDownload" onclick="downloadDataset()">下载 JSONL 数据集</button>
+        </div>
+    </div>
+
+</div>
+
+<!-- ── Edit Modal ── -->
+<div id="editModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.5);z-index:1000;align-items:center;justify-content:center;">
+    <div style="background:#fff;border-radius:var(--radius-lg);width:90%;max-width:900px;max-height:80vh;display:flex;flex-direction:column;box-shadow:var(--shadow-lg);">
+        <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;">
+            <strong>✏️ 编辑训练样本</strong>
+            <div style="display:flex;gap:8px;">
+                <button class="btn-outline btn-sm" onclick="formatJsonInModal()">格式化 JSON</button>
+                <button class="btn-outline btn-sm" onclick="resetEditModal()">撤销修改</button>
+                <button onclick="closeEditModal()" style="border:none;background:none;font-size:20px;cursor:pointer;color:var(--text-secondary);">&times;</button>
+            </div>
+        </div>
+        <div style="flex:1;overflow:hidden;padding:12px 20px;">
+            <textarea id="editTextarea" style="width:100%;height:100%;min-height:400px;font-family:'JetBrains Mono',monospace;font-size:12px;line-height:1.5;border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;resize:none;background:#1e1e2e;color:#cdd6f4;" spellcheck="false"></textarea>
+        </div>
+        <div style="padding:12px 20px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
+            <span style="font-size:12px;color:var(--text-tertiary);">直接编辑 JSON，修改后点击保存即生效。仅修改 messages 和 tools 字段。</span>
+            <button class="btn-brand" onclick="saveEditModal()">保存修改</button>
+        </div>
+    </div>
+</div>
+
+<script src="/static/js/training.js"></script>
+</body>
+</html>
