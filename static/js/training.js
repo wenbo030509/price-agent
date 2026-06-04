@@ -55,8 +55,13 @@ function showStep(step) {
 
 function goToStep1() { showStep(1); }
 function goToStep2() {
-    if (state.selectedFilenames.size === 0) return;
-    extractSamples();
+    if (state.samples.length === 0) {
+        if (state.selectedFilenames.size === 0) return;
+        extractSamples();
+        return;
+    }
+    showStep(2);
+    renderCurrentSample();
 }
 function goToStep3() { showStep(3); renderQualityView(); }
 function goToStep4() { showStep(4); renderExportView(); }
@@ -227,6 +232,10 @@ async function extractSamples() {
         // Init reviews and judge results
         state.reviews = {};
         state.judgeResults = {};
+        const llmInline = document.getElementById('sbLLMInline');
+        if (llmInline) llmInline.style.display = 'none';
+        const judgeStatusStep2 = document.getElementById('judgeStatusStep2');
+        if (judgeStatusStep2) judgeStatusStep2.style.display = 'none';
         renderCurrentSample();
     } catch (err) {
         document.getElementById('traceEventPreview').textContent = '提取失败';
@@ -238,7 +247,6 @@ function renderCurrentSample() {
     if (state.samples.length === 0) return;
     const s = state.samples[state.currentSampleIdx];
     document.getElementById('sampleCounter').textContent = `样本 ${state.currentSampleIdx + 1} / ${state.samples.length}`;
-    document.getElementById('sampleScore').textContent = s.quality_score + ' 分';
 
     // Left: event summary
     const lines = [];
@@ -263,11 +271,102 @@ function renderCurrentSample() {
 
     // Right: JSONL
     document.getElementById('jsonlPreview').textContent = buildJsonlString(s);
+
+    // ── Render sidebar ──
+    renderSidebar();
 }
 
 function buildJsonlString(sample) {
     const record = { messages: sample.messages, tools: sample.tools, parallel_tool_calls: sample.tool_count > 1 };
     return JSON.stringify(record, null, 2);
+}
+
+function renderSidebar() {
+    const idx = state.currentSampleIdx;
+    const s = state.samples[idx];
+    if (!s) return;
+
+    // ── Section 1: Heuristic score breakdown ──
+    const totalEl = document.getElementById('sbHeuristicTotal');
+    if (totalEl) totalEl.textContent = s.quality_score;
+
+    const dimsContainer = document.getElementById('sbHeuristicDims');
+    const dimDefs = [
+        { key: 'capability_score', label: 'Agent 能力展现', max: 40, cls: 'a' },
+        { key: 'execution_score', label: '执行质量', max: 30, cls: 'b' },
+        { key: 'grounding_score', label: '回答可信度', max: 20, cls: 'c' },
+        { key: 'completeness_score', label: '数据完整度', max: 10, cls: 'd' },
+    ];
+    if (dimsContainer) {
+        let html = '';
+        for (const d of dimDefs) {
+            const score = s.quality_details ? (s.quality_details[d.key] || 0) : 0;
+            const pct = d.max > 0 ? Math.round((score / d.max) * 100) : 0;
+            html += `<div class="sb-dim-row">
+                <span class="sb-dim-badge ${d.cls}">${d.cls.toUpperCase()}</span>
+                <span class="sb-dim-name">${d.label}</span>
+                <div class="sb-dim-bar"><div class="sb-dim-bar-fill ${d.cls}" style="width:${pct}%;"></div></div>
+                <span class="sb-dim-val">${score}/${d.max}</span>
+            </div>`;
+        }
+        dimsContainer.innerHTML = html;
+    }
+
+    // ── LLM judge result (inline in heuristic section) ──
+    const llmInline = document.getElementById('sbLLMInline');
+    const llmScore = document.getElementById('sbLLMScore');
+    const llmBody = document.getElementById('sbLLMBody');
+    const judgeResult = state.judgeResults[idx];
+
+    if (llmInline && llmScore && llmBody) {
+        if (judgeResult && !judgeResult.error) {
+            llmInline.style.display = '';
+            llmScore.textContent = judgeResult.overall_score + ' 分';
+
+            const dims = judgeResult.dimensions || {};
+            const dimLabels = {
+                agent_capability: 'A. Agent 能力展现', execution_quality: 'B. 执行质量',
+                response_grounding: 'C. 回答可信度', data_completeness: 'D. 数据完整度',
+            };
+            let dimsHtml = '';
+            for (const [k, v] of Object.entries(dimLabels)) {
+                const score = dims[k] !== undefined ? dims[k] : '-';
+                dimsHtml += `<div class="sb-llm-dim-item">
+                    <span class="lbl">${v}</span>
+                    <span class="val">${score}/10</span>
+                </div>`;
+            }
+            let html = dimsHtml;
+            if (judgeResult.summary) {
+                html += `<div style="font-size:11px;color:var(--text-secondary);border-top:1px solid var(--border-light);padding-top:6px;margin-top:4px;">💬 ${escHtml(judgeResult.summary)}</div>`;
+            }
+            if (judgeResult.issues && judgeResult.issues.length > 0) {
+                html += `<div style="font-size:11px;color:var(--error);margin-top:4px;">⚠️ ${judgeResult.issues.map(escHtml).join('; ')}</div>`;
+            }
+            llmBody.innerHTML = html;
+        } else if (judgeResult && judgeResult.error) {
+            llmInline.style.display = '';
+            llmScore.textContent = '失败';
+            llmBody.innerHTML = `<div style="color:var(--error);font-size:11px;">❌ 评估失败: ${escHtml(judgeResult.summary)}</div>`;
+        } else {
+            llmInline.style.display = 'none';
+        }
+    }
+
+    // ── Section 3: Review status ──
+    const statusEl = document.getElementById('sbReviewStatus');
+    if (statusEl) {
+        const rev = state.reviews[idx];
+        const status = rev ? rev.status : 'pending';
+        const statusLabels = {pending: '⏳ 待审', approved: '✓ 通过', rejected: '✗ 拒绝'};
+        const statusColors = {
+            pending: 'background:#F1F5F9;color:#64748B;',
+            approved: 'background:var(--success-bg);color:var(--success);',
+            rejected: 'background:var(--error-bg);color:var(--error);',
+        };
+        statusEl.textContent = statusLabels[status];
+        statusEl.setAttribute('style', 'padding:2px 10px;border-radius:var(--radius-full);font-size:11px;font-weight:600;' + (statusColors[status] || statusColors.pending));
+    }
 }
 
 function prevSample() {
@@ -421,14 +520,13 @@ function renderReviewList() {
         if (jResult && !jResult.error) {
             const dims = jResult.dimensions || {};
             const dimLabels = {
-                tool_selection: '工具选择', param_extraction: '参数提取',
-                data_grounding: '数据引用', answer_quality: '回答质量',
-                training_value: '训练价值',
+                agent_capability: 'A. Agent 能力展现', execution_quality: 'B. 执行质量',
+                response_grounding: 'C. 回答可信度', data_completeness: 'D. 数据完整度',
             };
             let dimsHtml = '';
             for (const [k, v] of Object.entries(dimLabels)) {
                 const score = dims[k] || '-';
-                dimsHtml += `<div class="item"><span class="lbl">${v}</span><span class="val">${score}/5</span></div>`;
+                dimsHtml += `<div class="item"><span class="lbl">${v}</span><span class="val">${score}/10</span></div>`;
             }
             judgeDetail = `
                 <div class="rc-detail-grid">
@@ -488,11 +586,26 @@ function toggleReviewCard(idx) {
     if (card) card.classList.toggle('expanded');
 }
 
+function toggleHeuristicRules() {
+    const body = document.getElementById('hrBody');
+    const icon = document.getElementById('hrToggleIcon');
+    if (body) {
+        if (body.style.display === 'none') {
+            body.style.display = '';
+            if (icon) icon.textContent = '▼';
+        } else {
+            body.style.display = 'none';
+            if (icon) icon.textContent = '▶';
+        }
+    }
+}
+
 function reviewSample(idx, status) {
     if (!state.reviews[idx]) state.reviews[idx] = {status: 'pending', notes: ''};
     state.reviews[idx].status = status;
     renderReviewList();
     updateQualityStats();
+    renderSidebar();
 }
 
 function filterReview(filter) {
@@ -524,6 +637,7 @@ function approveAllFiltered() {
     });
     renderReviewList();
     updateQualityStats();
+    renderSidebar();
 }
 
 function updateQualityStats() {
@@ -557,9 +671,8 @@ async function runLLMJudge(scope) {
     const statusDiv = document.getElementById('judgeStatus');
     statusDiv.style.display = 'block';
 
-    const btnCurrent = document.getElementById('btnJudgeCurrent');
     const btnAll = document.getElementById('btnJudgeAll');
-    btnCurrent.disabled = true; btnAll.disabled = true;
+    if (btnAll) btnAll.disabled = true;
 
     let targets = [];
     if (scope === 'current') {
@@ -600,7 +713,7 @@ async function runLLMJudge(scope) {
     statusDiv.innerHTML = `✅ LLM 评估完成: ${success} 成功, ${failed} 失败 | LLM 均分: <strong>${avgJScore}</strong> | 已评估: ${judged}/${state.samples.length}`;
 
     state.judgeLoading = false;
-    btnCurrent.disabled = false; btnAll.disabled = false;
+    if (btnAll) btnAll.disabled = false;
     renderReviewList();
     updateQualityStats();
 }
@@ -635,6 +748,45 @@ async function runLLMJudgeForIndex(idx) {
         const card = document.getElementById('reviewCard' + idx);
         if (card) card.classList.add('expanded');
     }, 100);
+}
+
+async function runLLMJudgeCurrentSample() {
+    // Evaluate current Step 2 sample via LLM judge
+    const idx = state.currentSampleIdx;
+    if (state.judgeLoading || state.samples.length === 0) return;
+    state.judgeLoading = true;
+
+    const statusDiv = document.getElementById('judgeStatusStep2');
+    statusDiv.style.display = 'block';
+    statusDiv.innerHTML = '🔄 LLM 评估中...';
+
+    const btn = document.getElementById('btnLLMJudgeCurrent');
+    if (btn) btn.disabled = true;
+
+    const s = state.samples[idx];
+    try {
+        const resp = await fetch('/api/training/judge', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({sample: s}),
+        });
+        const data = await resp.json();
+        if (data.success && data.judge) {
+            state.judgeResults[idx] = data.judge;
+            statusDiv.innerHTML = `✅ LLM 评估完成: <strong>${data.judge.overall_score}</strong> 分`;
+        } else {
+            state.judgeResults[idx] = {overall_score: 0, error: true, summary: data.error || '评估失败'};
+            statusDiv.innerHTML = `❌ 评估失败: ${escHtml(data.error || '未知错误')}`;
+        }
+    } catch (err) {
+        state.judgeResults[idx] = {overall_score: 0, error: true, summary: err.message};
+        statusDiv.innerHTML = `❌ 评估失败: ${escHtml(err.message)}`;
+    }
+
+    state.judgeLoading = false;
+    if (btn) btn.disabled = false;
+    renderCurrentSample();
+    updateQualityStats();
 }
 
 // ══════════════════════════════════════════════════════════

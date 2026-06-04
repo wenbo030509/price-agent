@@ -569,30 +569,51 @@ def _build_tools_schema(tool_names: Set[str]) -> List[Dict]:
 
 JUDGE_SYSTEM_PROMPT = """你是一个训练数据质量评估专家。你的任务是评估 Agent 执行 trace 作为后训练（SFT）数据样本的质量。
 
-请从以下维度评估，每个维度 1-5 分：
+请从以下 4 个维度评估，与启发式评分体系保持一致：
 
-1. **工具选择 (tool_selection)**: Agent 是否选择了正确的工具来满足用户需求？有没有调用不相关或冗余的工具？
-2. **参数提取 (param_extraction)**: 工具调用的参数是否正确地从用户查询中提取？有没有遗漏关键参数？
-3. **数据引用 (data_grounding)**: 最终回答是否正确引用了工具返回的真实数据？有没有编造工具返回中不存在的信息（幻觉）？
-4. **回答质量 (answer_quality)**: 回答是否完整、准确、结构清晰、对用户有帮助？
-5. **训练价值 (training_value)**: 这条样本对训练 Agent 的工具调用、推理规划、信息综合等能力有多大价值？
+A. **Agent 能力展现 (agent_capability) 0–10 分**：这条 trace 展示了 Agent 的哪些能力？
+  - Plan-Execute 多步规划、多工具协调（≥3工具）、多轮链式调用 → 高分（8-10）
+  - 双工具调用、Shopping 槽位填充 → 中等（5-7）
+  - 单工具调用 → 较低（2-4）
+  - 无工具调用 → 最低（0-1）
+
+B. **执行质量 (execution_quality) 0–10 分**：工具调用是否成功？有没有错误？
+  - 全部成功且查到数据 → 高分（8-10）
+  - 全部成功但部分无数据 → 中等偏高（6-7）
+  - 成功率 ≥ 80% → 中等（4-5）
+  - 有错误但尝试反思纠错 → 有一定价值（3-4）
+  - 大量错误且无纠错 → 低分（0-2）
+  - 无工具调用 → 中性（5）
+
+C. **回答可信度 (response_grounding) 0–10 分**：答案是否基于工具返回的真实数据？
+  - 明确引用价格和平台名 → 高分（8-10）
+  - 引用价格或平台之一 → 中等偏高（6-7）
+  - 含规格关键词（GB/mAh/英寸/处理器等）→ 中等（4-5）
+  - 仅结论性推荐，无具体数据 → 较低（2-3）
+  - 无明确数据引用 → 低分（0-1）
+  - 无工具调用时：答案 ≥ 100 字给 3-4 分，≥ 20 字给 1-2 分
+  - ⚠️ 答案短于 50 字且有工具调用 → 上限 3 分
+
+D. **数据完整度 (data_completeness) 0–10 分**：trace 结构是否完整？
+  - 有 system prompt (+2)、有用户查询 (+2)
+  - 有工具调用 (+3)、所有 tool_call 都有对应 result (+3)
+  - 部分有 result (+1)、无工具但有答案 (+2)
 
 额外检查：
-- **幻觉检测 (hallucination)**: 回答中是否包含工具返回数据中没有的具体信息（如价格数字、产品名）？通过/不通过
+- **幻觉检测 (hallucination)**：回答中是否包含工具返回数据中没有的具体信息（如价格数字、产品名）？通过/不通过
 
 请以 JSON 格式返回评估结果，不要包含其他文字：
 {
   "overall_score": 1-100,
   "dimensions": {
-    "tool_selection": 1-5,
-    "param_extraction": 1-5,
-    "data_grounding": 1-5,
-    "answer_quality": 1-5,
-    "training_value": 1-5
+    "agent_capability": 1-10,
+    "execution_quality": 1-10,
+    "response_grounding": 1-10,
+    "data_completeness": 1-10
   },
   "hallucination": "通过" | "不通过",
   "summary": "一句话总结评估结论",
-  "issues": ["问题1", "问题2"]  // 空数组如果没有问题
+  "issues": ["问题1", "问题2"]
 }"""
 
 
@@ -602,7 +623,6 @@ def build_judge_user_prompt(sample: dict) -> str:
     # 提取关键信息
     query = sample.get("query", "")
     messages = sample.get("messages", [])
-    tools = sample.get("tools", [])
 
     parts = ["请评估以下 Agent 训练样本：\n"]
 

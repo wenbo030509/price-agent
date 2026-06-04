@@ -390,6 +390,162 @@
             color: var(--text-secondary);
         }
 
+        /* ── Heuristic Rules Panel ── */
+        .heuristic-rules-panel {
+            flex-shrink: 0;
+            margin-bottom: 10px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-md);
+            background: #fff;
+            overflow: hidden;
+        }
+        .heuristic-rules-panel .hr-header {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 9px 14px;
+            background: var(--bg-input);
+            cursor: pointer;
+            user-select: none;
+            transition: background .15s;
+        }
+        .heuristic-rules-panel .hr-header:hover {
+            background: var(--bg-hover);
+        }
+        .heuristic-rules-panel .hr-title {
+            font-size: 13px; font-weight: 600;
+            color: var(--text-primary);
+        }
+        .heuristic-rules-panel .hr-toggle {
+            font-size: 11px; color: var(--text-tertiary);
+            transition: transform .2s;
+        }
+        .heuristic-rules-panel.collapsed .hr-toggle {
+            transform: rotate(-90deg);
+        }
+        .heuristic-rules-panel .hr-body {
+            padding: 12px 14px;
+            border-top: 1px solid var(--border-light);
+        }
+        .heuristic-rules-panel.collapsed .hr-body {
+            display: none;
+        }
+        .hr-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px 20px;
+        }
+        @media (max-width: 900px) {
+            .hr-grid { grid-template-columns: 1fr; }
+        }
+        .hr-dim {
+            min-width: 0;
+        }
+        .hr-dim-header {
+            font-size: 13px; color: var(--text-primary);
+            margin-bottom: 6px;
+            display: flex; align-items: center; gap: 6px;
+        }
+        .hr-dim-header strong {
+            font-size: 11px; color: var(--text-tertiary);
+            margin-left: auto;
+        }
+        .hr-dim-badge {
+            width: 22px; height: 22px; border-radius: 50%;
+            display: inline-flex; align-items: center; justify-content: center;
+            font-size: 11px; font-weight: 700; color: #fff; flex-shrink: 0;
+        }
+        .hr-dim-badge.a { background: #7C3AED; }
+        .hr-dim-badge.b { background: #2563EB; }
+        .hr-dim-badge.c { background: #059669; }
+        .hr-dim-badge.d { background: #D97706; }
+        .hr-rules {
+            margin: 0; padding-left: 16px;
+            font-size: 11px; color: var(--text-secondary);
+            line-height: 1.7;
+        }
+        .hr-rules li {
+            margin-bottom: 1px;
+        }
+        .hr-rules b {
+            color: var(--text-primary); font-weight: 500;
+        }
+
+        /* ── Step 2: Right Sidebar ── */
+        .step2-sidebar {
+            width: 350px; flex-shrink: 0; min-height: 0;
+            overflow-y: auto; overflow-x: hidden;
+            border-left: 1px solid var(--border);
+            background: var(--bg-input);
+            padding: 16px 14px;
+        }
+        @media (max-width: 1100px) {
+            .step2-sidebar { width: 280px; }
+        }
+        .sb-section {
+            background: #fff; border: 1px solid var(--border);
+            border-radius: var(--radius-md); overflow: hidden;
+            margin-bottom: 10px;
+        }
+        .sb-section:last-of-type { margin-bottom: 0; }
+        .sb-section-header {
+            padding: 8px 12px; font-size: 12px; font-weight: 600;
+            background: var(--bg-input); border-bottom: 1px solid var(--border-light);
+            display: flex; align-items: center; justify-content: space-between;
+        }
+        .sb-section-body { padding: 10px 12px; font-size: 12px; }
+        .sb-score-total {
+            font-size: 12px; text-align: center; margin-bottom: 10px;
+        }
+        .sb-score-total strong {
+            font-size: 32px; font-family: 'JetBrains Mono', monospace;
+            color: var(--brand);
+        }
+        .sb-dim-row {
+            display: flex; align-items: center; gap: 6px; margin-bottom: 6px;
+        }
+        .sb-dim-badge {
+            width: 18px; height: 18px; border-radius: 50%; flex-shrink: 0;
+            display: inline-flex; align-items: center; justify-content: center;
+            font-size: 10px; font-weight: 700; color: #fff;
+        }
+        .sb-dim-badge.a { background: #7C3AED; }
+        .sb-dim-badge.b { background: #2563EB; }
+        .sb-dim-badge.c { background: #059669; }
+        .sb-dim-badge.d { background: #D97706; }
+        .sb-dim-name {
+            font-size: 10px; color: var(--text-secondary);
+            width: 55px; flex-shrink: 0;
+        }
+        .sb-dim-bar {
+            flex: 1; height: 8px; background: #e5e7eb;
+            border-radius: 4px; overflow: hidden; min-width: 40px;
+        }
+        .sb-dim-bar-fill {
+            height: 100%; border-radius: 4px; transition: width 0.3s;
+        }
+        .sb-dim-bar-fill.a { background: #7C3AED; }
+        .sb-dim-bar-fill.b { background: #2563EB; }
+        .sb-dim-bar-fill.c { background: #059669; }
+        .sb-dim-bar-fill.d { background: #D97706; }
+        .sb-dim-val {
+            font-size: 11px; font-family: 'JetBrains Mono', monospace;
+            min-width: 42px; text-align: right; color: var(--text-primary); font-weight: 600;
+        }
+        .sb-llm-dim-item {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 4px 0; border-bottom: 1px solid var(--border-light);
+            font-size: 11px;
+        }
+        .sb-llm-dim-item:last-child { border-bottom: none; }
+        .sb-llm-dim-item .lbl { color: var(--text-secondary); }
+        .sb-llm-dim-item .val {
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 600; color: #7C3AED;
+        }
+        /* Rules grid in sidebar — always single column */
+        .hr-grid-sidebar {
+            display: flex; flex-direction: column; gap: 10px;
+        }
+
         /* ── Step 4: Export ── */
         .export-preview {
             background: #1e1e2e; border-radius: var(--radius-md);
@@ -539,33 +695,139 @@
          Step 2: Format Extraction
          ════════════════════════════════════════════════════════ -->
     <div class="step-content" id="step2Content" style="display:none;">
-        <div class="step-body">
-            <h3>Step 2 — 格式提取预览</h3>
-            <p class="step-desc">查看原始 Trace 事件如何被转换为 OpenAI SFT fine-tuning 训练格式。支持在线编辑训练数据并实时预览。</p>
+        <div class="step-body" style="display:flex;padding:0;overflow:hidden;">
 
-            <div class="sample-nav">
-                <button onclick="prevSample()">← 上一个</button>
-                <span class="sample-counter" id="sampleCounter">样本 1 / 0</span>
-                <button onclick="nextSample()">下一个 →</button>
-                <div style="flex:1;"></div>
-                <span style="font-size:13px;color:var(--text-secondary);">质量分: <strong style="color:var(--brand);" id="sampleScore">-</strong></span>
-                <button class="btn-outline btn-sm" onclick="openEditModal()" style="margin-left:8px;">✏️ 编辑</button>
-            </div>
+            <!-- ── 主内容区 ── -->
+            <div class="step2-main" style="flex:1;overflow-y:auto;min-width:0;min-height:0;padding:28px 24px 0;">
+                <h3>Step 2 — 格式提取预览</h3>
+                <p class="step-desc">查看原始 Trace 事件如何被转换为 OpenAI SFT fine-tuning 训练格式。支持在线编辑训练数据并实时预览。右侧栏可查看评分详情与规则，辅助人工评估。</p>
 
-            <div class="format-compare">
-                <div class="format-panel">
-                    <div class="panel-header">📋 原始 Trace 事件摘要</div>
-                    <div class="panel-body" id="traceEventPreview">请选择一个样本</div>
+                <div class="sample-nav">
+                    <button onclick="prevSample()">← 上一个</button>
+                    <span class="sample-counter" id="sampleCounter">样本 1 / 0</span>
+                    <button onclick="nextSample()">下一个 →</button>
+                    <div style="flex:1;"></div>
+                    <button class="btn-outline btn-sm" onclick="openEditModal()">✏️ 编辑</button>
                 </div>
-                <div class="format-panel">
-                    <div class="panel-header">🎯 训练 JSONL 格式 (OpenAI SFT)</div>
-                    <div class="panel-body" id="jsonlPreview">请选择一个样本</div>
+
+                <div class="format-compare">
+                    <div class="format-panel">
+                        <div class="panel-header">📋 原始 Trace 事件摘要</div>
+                        <div class="panel-body" id="traceEventPreview">请选择一个样本</div>
+                    </div>
+                    <div class="format-panel">
+                        <div class="panel-header">🎯 训练 JSONL 格式 (OpenAI SFT)</div>
+                        <div class="panel-body" id="jsonlPreview">请选择一个样本</div>
+                    </div>
+                </div>
+
+                <div class="warning-note">
+                    ⚠️ 当前为 <strong>MVP 演示版本</strong>，tool response 内容从 Trace 事件重建（截断300字符）。完整版需在 <code>react_engine.py</code> 中保存完整 messages。
                 </div>
             </div>
 
-            <div class="warning-note">
-                ⚠️ 当前为 <strong>MVP 演示版本</strong>，tool response 内容从 Trace 事件重建（截断300字符）。完整版需在 <code>react_engine.py</code> 中保存完整 messages。
+            <!-- ── 右侧评分侧边栏 ── -->
+            <div class="step2-sidebar" id="step2Sidebar">
+                <!-- Section 1: 启发式评分 + LLM 评估 -->
+                <div class="sb-section">
+                    <div class="sb-section-header">📊 启发式评分</div>
+                    <div class="sb-section-body">
+                        <div class="sb-score-total">
+                            <strong id="sbHeuristicTotal">-</strong><span style="font-size:13px;color:var(--text-tertiary);"> / 100</span>
+                        </div>
+                        <div id="sbHeuristicDims">
+                            <div style="font-size:12px;color:var(--text-tertiary);text-align:center;">加载中...</div>
+                        </div>
+                        <!-- LLM 评估（内嵌） -->
+                        <div id="sbLLMInline" style="display:none;border-top:1px solid var(--border-light);margin-top:10px;padding-top:10px;">
+                            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+                                <span style="font-size:11px;font-weight:600;color:var(--text-primary);">🤖 LLM 评估</span>
+                                <span style="font-size:11px;color:#7C3AED;font-weight:700;" id="sbLLMScore">-</span>
+                            </div>
+                            <div id="sbLLMBody"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Section 2: 人工审核 -->
+                <div class="sb-section">
+                    <div class="sb-section-header">👤 人工审核</div>
+                    <div class="sb-section-body">
+                        <div style="margin-bottom:8px;">
+                            <span style="font-size:12px;color:var(--text-tertiary);">状态: </span>
+                            <span id="sbReviewStatus" style="padding:2px 10px;border-radius:var(--radius-full);font-size:11px;font-weight:600;">⏳ 待审</span>
+                        </div>
+                        <div style="display:flex;gap:6px;">
+                            <button class="btn-outline btn-sm" onclick="reviewSample(state.currentSampleIdx,'approved')" style="flex:1;border-color:var(--success);color:var(--success);">✓ 通过</button>
+                            <button class="btn-outline btn-sm" onclick="reviewSample(state.currentSampleIdx,'rejected')" style="flex:1;border-color:var(--error);color:var(--error);">✗ 拒绝</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Section 3: 启发式评分规则（可折叠） -->
+                <div class="sb-section">
+                    <div class="sb-section-header" onclick="toggleHeuristicRules()" style="cursor:pointer;user-select:none;">
+                        <span>📐 启发式评分规则</span>
+                        <span id="hrToggleIcon" style="font-size:11px;color:var(--text-tertiary);transition:transform .2s;">▶</span>
+                    </div>
+                    <div class="sb-section-body" id="hrBody" style="display:none;">
+                        <div class="hr-grid-sidebar">
+                            <div class="hr-dim">
+                                <div class="hr-dim-header"><span class="hr-dim-badge a">A</span> Agent 能力展现 <strong>0–40 分</strong></div>
+                                <ul class="hr-rules">
+                                    <li><b>Plan-Execute 模式</b>：25 基础 + 工具数×3（上限 15）→ 最高 40</li>
+                                    <li><b>多工具协调</b>（≥3 工具）：25 + 工具数×3 → 最高 40</li>
+                                    <li><b>双工具调用</b>：20 分</li>
+                                    <li><b>多轮链式调用</b>：18 分</li>
+                                    <li><b>单工具调用</b>：10 分</li>
+                                    <li><b>Shopping 槽位填充</b>：12 + 槽位数×2（上限 8）</li>
+                                    <li><b>无工具调用</b>：0 分</li>
+                                </ul>
+                            </div>
+                            <div class="hr-dim">
+                                <div class="hr-dim-header"><span class="hr-dim-badge b">B</span> 执行质量 <strong>0–30 分</strong></div>
+                                <ul class="hr-rules">
+                                    <li><b>全部成功且有数据</b>：30 分</li>
+                                    <li><b>全部成功部分有数据</b>：22 分</li>
+                                    <li><b>成功率 ≥ 80%</b>：15 分</li>
+                                    <li><b>无工具调用</b>：15 分（中性）</li>
+                                    <li><b>有错误但尝试反思纠错</b>：12 分</li>
+                                    <li><b>有错误无纠错</b>：5 分</li>
+                                    <li>⚠️ 有 error 事件 → 上限 10 分</li>
+                                </ul>
+                            </div>
+                            <div class="hr-dim">
+                                <div class="hr-dim-header"><span class="hr-dim-badge c">C</span> 回答可信度 <strong>0–20 分</strong></div>
+                                <ul class="hr-rules">
+                                    <li><b>引用价格 + 平台名</b>：20 分</li>
+                                    <li><b>引用价格或平台</b>：14 分</li>
+                                    <li><b>含规格关键词</b>：10 分</li>
+                                    <li><b>仅结论性推荐</b>：6 分</li>
+                                    <li><b>无工具内容回答</b>：8 分（≥100字）/ 3 分（≥20字）/ 0 分</li>
+                                    <li><b>无明确引用</b>：2 分</li>
+                                    <li>⚠️ 答案 &lt; 50 字且有工具 → 上限 5 分</li>
+                                </ul>
+                            </div>
+                            <div class="hr-dim">
+                                <div class="hr-dim-header"><span class="hr-dim-badge d">D</span> 数据完整度 <strong>0–10 分</strong></div>
+                                <ul class="hr-rules">
+                                    <li><b>有 System Prompt</b>：+2 分</li>
+                                    <li><b>有用户查询</b>：+2 分</li>
+                                    <li><b>有工具调用</b>：+3 分</li>
+                                    <li><b>所有 tool_call 都有 result</b>：+3 分</li>
+                                    <li><b>部分有 result</b>：+1 分</li>
+                                    <li><b>无工具但有答案</b>：+2 分</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 操作按钮 + 状态 -->
+                <button class="btn-brand btn-sm" id="btnLLMJudgeCurrent" onclick="runLLMJudgeCurrentSample()" style="width:100%;margin-bottom:8px;">🤖 LLM 评估此条</button>
+                <div id="judgeStatusStep2" style="display:none;padding:8px 12px;background:var(--brand-bg);border-radius:var(--radius-sm);font-size:12px;color:var(--brand-dark);margin-bottom:8px;"></div>
             </div>
+
         </div>
 
         <div class="step-actions">
@@ -613,7 +875,6 @@
 
                 <!-- 操作按钮 -->
                 <div class="review-actions">
-                    <button class="btn-outline btn-sm" id="btnJudgeCurrent" onclick="runLLMJudge('current')" title="用 LLM 评估当前 Step 2 预览的样本">🤖 评估当前</button>
                     <button class="btn-brand btn-sm" id="btnJudgeAll" onclick="runLLMJudge('all')" title="对所有样本逐一调用 LLM 评估">🤖 批量 LLM 评估</button>
                     <button class="btn-outline btn-sm" onclick="approveAllFiltered()">✓ 全部通过</button>
                 </div>
