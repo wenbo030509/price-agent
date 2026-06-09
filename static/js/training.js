@@ -53,9 +53,14 @@ function showStep(step) {
     }
 }
 
-function goToStep1() { showStep(1); }
+function goToStep1() {
+    showStep(1);
+}
 function goToStep2() {
-    if (state.samples.length === 0) {
+    // 仅当样本为空或选中项已变更时才重新提取；从 Step 3 返回时复用缓存
+    const currentSelection = Array.from(state.selectedFilenames).sort().join(',');
+    const needsExtract = state.samples.length === 0 || state._lastExtractedSelection !== currentSelection;
+    if (needsExtract) {
         if (state.selectedFilenames.size === 0) return;
         extractSamples();
         return;
@@ -229,6 +234,8 @@ async function extractSamples() {
         if (!data.success) throw new Error(data.error);
         state.samples = data.samples;
         state.currentSampleIdx = 0;
+        // 记录本次提取对应的选中项，供 goToStep2 判断是否需要重新提取
+        state._lastExtractedSelection = Array.from(state.selectedFilenames).sort().join(',');
         // Init reviews and judge results
         state.reviews = {};
         state.judgeResults = {};
@@ -238,6 +245,8 @@ async function extractSamples() {
         if (judgeStatusStep2) judgeStatusStep2.style.display = 'none';
         renderCurrentSample();
     } catch (err) {
+        // 提取失败时清除标记，确保下次进入 Step 2 可以重试
+        state._lastExtractedSelection = null;
         document.getElementById('traceEventPreview').textContent = '提取失败';
         document.getElementById('jsonlPreview').textContent = err.message;
     }
@@ -292,10 +301,10 @@ function renderSidebar() {
 
     const dimsContainer = document.getElementById('sbHeuristicDims');
     const dimDefs = [
-        { key: 'capability_score', label: 'Agent 能力展现', max: 40, cls: 'a' },
-        { key: 'execution_score', label: '执行质量', max: 30, cls: 'b' },
-        { key: 'grounding_score', label: '回答可信度', max: 20, cls: 'c' },
-        { key: 'completeness_score', label: '数据完整度', max: 10, cls: 'd' },
+        { key: 'capability_score', label: 'A. Agent 能力展现', max: 10, cls: 'a' },
+        { key: 'execution_score', label: 'B. 执行质量', max: 10, cls: 'b' },
+        { key: 'grounding_score', label: 'C. 回答可信度', max: 10, cls: 'c' },
+        { key: 'completeness_score', label: 'D. 数据完整度', max: 10, cls: 'd' },
     ];
     if (dimsContainer) {
         let html = '';

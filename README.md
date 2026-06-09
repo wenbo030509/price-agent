@@ -114,8 +114,9 @@
 - **独立页面**：`/training-data`，4 步向导式处理链路
 - **Trace 列表**：分页表格（50条/页）+ 按意图/模式/工具数筛选 + 点击展开详情
 - **格式提取**：Trace → OpenAI SFT fine-tuning JSONL，左右对比视图 + 在线编辑
-- **质量评分**：从业务视角评估（Agent 能力展现/执行质量/回答可信度/数据完整度）
-- **LLM-as-Judge**：调用 DeepSeek 从 5 个维度（工具选择/参数提取/数据引用/回答质量/训练价值）评估样本质量
+- **质量评分**：4 维度启发式评分（能力展现/执行质量/回答可信度/数据完整度，每项 0–10 分），与 LLM-as-Judge 评分尺度一致，便于交叉校验
+- **LLM-as-Judge**：调用 DeepSeek 从 4 维度（能力展现/执行质量/回答可信度/数据完整度）+ 幻觉检测评估样本质量
+- **完整数据采集**：Agent 运行后自动保存完整 messages（含 tool call 参数和 tool response 全文），替代早期事件摘要截断，训练数据质量显著提升
 - **人工审核**：卡片式审核列表 + ✓通过/✗拒绝 + 按状态筛选 + 批量操作
 - **JSONL 导出**：符合 OpenAI Chat Completions fine-tuning 格式，可对接 HuggingFace TRL / Unsloth
 - **处理规模**：188 条 Trace → ~52 条高价值训练样本（≥70分）

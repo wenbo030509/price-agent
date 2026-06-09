@@ -722,7 +722,7 @@
                 </div>
 
                 <div class="warning-note">
-                    ⚠️ 当前为 <strong>MVP 演示版本</strong>，tool response 内容从 Trace 事件重建（截断300字符）。完整版需在 <code>react_engine.py</code> 中保存完整 messages。
+                    ⚠️ 新版 trace 已保存完整 messages（含 tool call 参数和 tool response 全文）。旧版 trace 仍从事件摘要重建（截断300字符），运行新 Agent 后生成的 trace 将包含完整数据。
                 </div>
             </div>
 
@@ -773,50 +773,50 @@
                     <div class="sb-section-body" id="hrBody" style="display:none;">
                         <div class="hr-grid-sidebar">
                             <div class="hr-dim">
-                                <div class="hr-dim-header"><span class="hr-dim-badge a">A</span> Agent 能力展现 <strong>0–40 分</strong></div>
+                                <div class="hr-dim-header"><span class="hr-dim-badge a">A</span> Agent 能力展现 <strong>0–10 分</strong></div>
                                 <ul class="hr-rules">
-                                    <li><b>Plan-Execute 模式</b>：25 基础 + 工具数×3（上限 15）→ 最高 40</li>
-                                    <li><b>多工具协调</b>（≥3 工具）：25 + 工具数×3 → 最高 40</li>
-                                    <li><b>双工具调用</b>：20 分</li>
-                                    <li><b>多轮链式调用</b>：18 分</li>
-                                    <li><b>单工具调用</b>：10 分</li>
-                                    <li><b>Shopping 槽位填充</b>：12 + 槽位数×2（上限 8）</li>
+                                    <li><b>Plan-Execute 模式</b>：6.0 基础 + 工具数×0.8（上限 4.0）→ 最高 10</li>
+                                    <li><b>多工具协调</b>（≥3 工具）：6.0 + 工具数×0.8 → 最高 10</li>
+                                    <li><b>双工具调用</b>：5.0 分</li>
+                                    <li><b>多轮链式调用</b>：4.5 分</li>
+                                    <li><b>单工具调用</b>：2.5 分</li>
+                                    <li><b>Shopping 槽位填充</b>：3.0 + 槽位数×0.5（上限 2.0）</li>
                                     <li><b>无工具调用</b>：0 分</li>
                                 </ul>
                             </div>
                             <div class="hr-dim">
-                                <div class="hr-dim-header"><span class="hr-dim-badge b">B</span> 执行质量 <strong>0–30 分</strong></div>
+                                <div class="hr-dim-header"><span class="hr-dim-badge b">B</span> 执行质量 <strong>0–10 分</strong></div>
                                 <ul class="hr-rules">
-                                    <li><b>全部成功且有数据</b>：30 分</li>
-                                    <li><b>全部成功部分有数据</b>：22 分</li>
-                                    <li><b>成功率 ≥ 80%</b>：15 分</li>
-                                    <li><b>无工具调用</b>：15 分（中性）</li>
-                                    <li><b>有错误但尝试反思纠错</b>：12 分</li>
-                                    <li><b>有错误无纠错</b>：5 分</li>
-                                    <li>⚠️ 有 error 事件 → 上限 10 分</li>
+                                    <li><b>全部成功且有数据</b>：10 分</li>
+                                    <li><b>全部成功部分有数据</b>：7.0 分</li>
+                                    <li><b>成功率 ≥ 80%</b>：5.0 分</li>
+                                    <li><b>无工具调用</b>：5.0 分（中性）</li>
+                                    <li><b>有错误但尝试反思纠错</b>：4.0 分</li>
+                                    <li><b>有错误无纠错</b>：2.0 分</li>
+                                    <li>⚠️ 有 error 事件 → 上限 3.0 分</li>
                                 </ul>
                             </div>
                             <div class="hr-dim">
-                                <div class="hr-dim-header"><span class="hr-dim-badge c">C</span> 回答可信度 <strong>0–20 分</strong></div>
+                                <div class="hr-dim-header"><span class="hr-dim-badge c">C</span> 回答可信度 <strong>0–10 分</strong></div>
                                 <ul class="hr-rules">
-                                    <li><b>引用价格 + 平台名</b>：20 分</li>
-                                    <li><b>引用价格或平台</b>：14 分</li>
-                                    <li><b>含规格关键词</b>：10 分</li>
-                                    <li><b>仅结论性推荐</b>：6 分</li>
-                                    <li><b>无工具内容回答</b>：8 分（≥100字）/ 3 分（≥20字）/ 0 分</li>
-                                    <li><b>无明确引用</b>：2 分</li>
-                                    <li>⚠️ 答案 &lt; 50 字且有工具 → 上限 5 分</li>
+                                    <li><b>引用价格 + 平台名</b>：10 分</li>
+                                    <li><b>引用价格或平台</b>：7.0 分</li>
+                                    <li><b>含规格关键词</b>：5.0 分</li>
+                                    <li><b>仅结论性推荐</b>：3.0 分</li>
+                                    <li><b>无工具内容回答</b>：4.0 分（≥100字）/ 1.5 分（≥20字）/ 0 分</li>
+                                    <li><b>无明确引用</b>：1.0 分</li>
+                                    <li>⚠️ 答案 &lt; 50 字且有工具 → 上限 2.5 分</li>
                                 </ul>
                             </div>
                             <div class="hr-dim">
                                 <div class="hr-dim-header"><span class="hr-dim-badge d">D</span> 数据完整度 <strong>0–10 分</strong></div>
                                 <ul class="hr-rules">
-                                    <li><b>有 System Prompt</b>：+2 分</li>
-                                    <li><b>有用户查询</b>：+2 分</li>
-                                    <li><b>有工具调用</b>：+3 分</li>
-                                    <li><b>所有 tool_call 都有 result</b>：+3 分</li>
-                                    <li><b>部分有 result</b>：+1 分</li>
-                                    <li><b>无工具但有答案</b>：+2 分</li>
+                                    <li><b>有 System Prompt</b>：+2.0 分</li>
+                                    <li><b>有用户查询</b>：+2.0 分</li>
+                                    <li><b>有工具调用</b>：+3.0 分</li>
+                                    <li><b>所有 tool_call 都有 result</b>：+3.0 分</li>
+                                    <li><b>部分有 result</b>：+1.0 分</li>
+                                    <li><b>无工具但有答案</b>：+2.0 分</li>
                                 </ul>
                             </div>
                         </div>
