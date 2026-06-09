@@ -19,11 +19,13 @@ TRACE_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "eval", "re
 #
 # 评分回答一个问题：这条 trace 对训练 Agent 能力的贡献有多大？
 #
-# 四个维度：
-#   A. Agent 能力展现 (0-40)：工具协调、规划推理、多步执行
-#   B. 执行质量     (0-30)：工具是否成功、是否有错误、是否有纠错
-#   C. 回答可信度   (0-20)：答案是否基于工具数据、有无具体信息
-#   D. 数据完整度   (0-10)：trace 结构是否完整可训练
+# 四个维度，每项 0–10 分（与 LLM-as-Judge 评分尺度一致）：
+#   A. Agent 能力展现 (0–10)：工具协调、规划推理、多步执行
+#   B. 执行质量     (0–10)：工具是否成功、是否有错误、是否有纠错
+#   C. 回答可信度   (0–10)：答案是否基于工具数据、有无具体信息
+#   D. 数据完整度   (0–10)：trace 结构是否完整可训练
+#
+# 总分 = (A + B + C + D) × 2.5，范围 0–100
 #
 
 
@@ -111,7 +113,11 @@ def list_traces(trace_dir: str = None) -> List[TraceMeta]:
 
 
 def extract_sample(filepath: str) -> Optional[TrainingSample]:
-    """从单个 trace JSON 提取训练样本"""
+    """从单个 trace JSON 提取训练样本
+
+    优先使用 trace 中保存的 raw_messages（完整 tool call/response），
+    仅在旧版本 trace 无 raw_messages 时回退到事件重建（截断300字符）。
+    """
     try:
         with open(filepath, "r") as f:
             trace = json.load(f)
@@ -120,6 +126,7 @@ def extract_sample(filepath: str) -> Optional[TrainingSample]:
 
     meta = trace.get("meta", {})
     events = trace.get("events", [])
+    raw_messages = trace.get("raw_messages")
 
     # ── 提取元信息 ──
     intent = ""
@@ -133,79 +140,97 @@ def extract_sample(filepath: str) -> Optional[TrainingSample]:
         elif ev["type"] == "skill_load":
             skill_names = ev["data"].get("skills", [])
 
-    # ── 构建 system prompt ──
-    system_content = _build_system_prompt(intent, mode, skill_names)
-
-    # ── 重建 messages ──
-    messages = [{"role": "system", "content": system_content}]
-    messages.append({"role": "user", "content": meta.get("query", "")})
-
-    # 按 round 分组事件
-    rounds = _group_events_by_round(events)
+    # ── 构建 messages：优先使用 Agent 保存的完整 messages ──
     tools_used = set()
+    if raw_messages and isinstance(raw_messages, list) and len(raw_messages) > 0:
+        messages = list(raw_messages)
+        # 从完整 messages 中提取 tools_used 和 round 数量
+        round_count = 0
+        for m in messages:
+            if m.get("role") == "assistant" and m.get("tool_calls"):
+                round_count += 1
+                for tc in m["tool_calls"]:
+                    fn = tc.get("function", {})
+                    tool_name = fn.get("name", "")
+                    if tool_name and tool_name != "load_skill":
+                        tools_used.add(tool_name)
+        # 确保第一条是 system role（如果缺失则补充）
+        if messages and messages[0].get("role") != "system":
+            system_content = _build_system_prompt(intent, mode, skill_names)
+            messages.insert(0, {"role": "system", "content": system_content})
+        rounds = list(range(round_count))  # 伪造等长列表，len(rounds) == round_count
+    else:
+        # ── 回退：从 Trace 事件重建 messages（旧版本兼容）──
+        system_content = _build_system_prompt(intent, mode, skill_names)
+        messages = [{"role": "system", "content": system_content}]
+        messages.append({"role": "user", "content": meta.get("query", "")})
 
-    for round_num, round_events in rounds.items():
-        tool_calls_in_round = [e for e in round_events if e["type"] == "tool_call"]
-        tool_results_in_round = [e for e in round_events if e["type"] == "tool_result"]
+        # 按 round 分组事件
+        rounds = _group_events_by_round(events)
 
-        if not tool_calls_in_round:
-            continue
+        for round_num, round_events in rounds.items():
+            tool_calls_in_round = [e for e in round_events if e["type"] == "tool_call"]
+            tool_results_in_round = [e for e in round_events if e["type"] == "tool_result"]
 
-        # 构建 assistant 消息（含 tool_calls）
-        assistant_tool_calls = []
-        for i, tc_ev in enumerate(tool_calls_in_round):
-            d = tc_ev["data"]
-            tool_name = d.get("tool", "unknown")
-            args = d.get("args", {})
-            tools_used.add(tool_name)
-            call_id = f"call_{round_num}_{i}"
+            if not tool_calls_in_round:
+                continue
 
-            assistant_tool_calls.append({
-                "id": call_id,
-                "type": "function",
-                "function": {
-                    "name": tool_name,
-                    "arguments": json.dumps(args, ensure_ascii=False),
-                },
-            })
+            # 构建 assistant 消息（含 tool_calls）
+            assistant_tool_calls = []
+            for i, tc_ev in enumerate(tool_calls_in_round):
+                d = tc_ev["data"]
+                tool_name = d.get("tool", "unknown")
+                args = d.get("args", {})
+                tools_used.add(tool_name)
+                call_id = f"call_{round_num}_{i}"
 
-        messages.append({
-            "role": "assistant",
-            "content": None,
-            "tool_calls": assistant_tool_calls,
-        })
-
-        # 构建 tool 消息（配对 tool_call 和 tool_result）
-        for i, (tc_ev, tr_ev) in enumerate(
-            zip(tool_calls_in_round, tool_results_in_round)
-        ):
-            call_id = f"call_{round_num}_{i}"
-            tr_data = tr_ev["data"]
-            summary = tr_data.get("summary", "")
-
-            # 尝试解析 summary 为 JSON
-            tool_content = summary
-            try:
-                parsed = json.loads(summary)
-                tool_content = json.dumps(parsed, ensure_ascii=False)
-            except (json.JSONDecodeError, TypeError):
-                pass
+                assistant_tool_calls.append({
+                    "id": call_id,
+                    "type": "function",
+                    "function": {
+                        "name": tool_name,
+                        "arguments": json.dumps(args, ensure_ascii=False),
+                    },
+                })
 
             messages.append({
-                "role": "tool",
-                "tool_call_id": call_id,
-                "content": tool_content,
+                "role": "assistant",
+                "content": None,
+                "tool_calls": assistant_tool_calls,
             })
 
-    # 最终 assistant 回答
-    answer = meta.get("answer", "")
-    if answer:
-        messages.append({"role": "assistant", "content": answer})
+            # 构建 tool 消息（配对 tool_call 和 tool_result）
+            for i, (tc_ev, tr_ev) in enumerate(
+                zip(tool_calls_in_round, tool_results_in_round)
+            ):
+                call_id = f"call_{round_num}_{i}"
+                tr_data = tr_ev["data"]
+                summary = tr_data.get("summary", "")
+
+                # 尝试解析 summary 为 JSON
+                tool_content = summary
+                try:
+                    parsed = json.loads(summary)
+                    tool_content = json.dumps(parsed, ensure_ascii=False)
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": call_id,
+                    "content": tool_content,
+                })
+
+        # 最终 assistant 回答
+        answer = meta.get("answer", "")
+        if answer:
+            messages.append({"role": "assistant", "content": answer})
 
     # ── 构建 tools schema ──
     tools_schema = _build_tools_schema(tools_used)
 
     # ── 质量打分 ──
+    answer = meta.get("answer", "")
     score, details = compute_quality(events, answer, tools_used)
 
     sample = TrainingSample(
@@ -250,7 +275,7 @@ def compute_quality(events: List[Dict], answer: str, tools_used: Set[str]) -> Tu
     total = 0.0
 
     # ═══════════════════════════════════════════════════════════
-    # A. Agent 能力展现 (0-40)
+    # A. Agent 能力展现 (0–10)
     #    这条 trace 展示了 Agent 的哪些能力？
     #    多工具协调 > 规划推理 > 单工具调用 > 无工具
     # ═══════════════════════════════════════════════════════════
@@ -260,49 +285,49 @@ def compute_quality(events: List[Dict], answer: str, tools_used: Set[str]) -> Tu
     if tc == 0:
         # 无工具调用：仅对话交互，训练价值最低
         details["agent_capability"] = "no_tools"
-        capability = 0
+        capability = 0.0
     elif mode == "plan_execute":
         # Plan-Execute：展示了规划和分步执行能力 — 最高价值
         details["agent_capability"] = "plan_execute"
-        base = 25
+        base = 6.0
         # 额外加分：工具数多、有并行调用
-        parallel_bonus = min(tc * 3, 15)
+        parallel_bonus = min(tc * 0.8, 4.0)
         capability = base + parallel_bonus
     elif tc >= 3:
         # 多工具协调：并行调用、信息综合 — 高价值
         details["agent_capability"] = "multi_tool_coordination"
-        capability = 25 + min(tc * 3, 15)
+        capability = 6.0 + min(tc * 0.8, 4.0)
     elif tc == 2:
         details["agent_capability"] = "dual_tool"
-        capability = 20
+        capability = 5.0
     elif rounds >= 2:
         # 多轮工具调用（链式推理）
         details["agent_capability"] = "multi_round_chain"
-        capability = 18
+        capability = 4.5
     else:
         details["agent_capability"] = "single_tool"
-        capability = 10
+        capability = 2.5
 
     # Shopping 模式槽位填充：有一定的交互训练价值
     if mode == "shopping":
         slot_count = sum(1 for e in events if e["type"] == "slot_filled")
         if slot_count > 0:
             details["agent_capability"] = "shopping_with_slots"
-            capability = max(capability, 12 + min(slot_count * 2, 8))
+            capability = max(capability, 3.0 + min(slot_count * 0.5, 2.0))
 
-    capability = min(capability, 40)
+    capability = round(min(capability, 10.0), 1)
     details["capability_score"] = capability
     total += capability
 
     # ═══════════════════════════════════════════════════════════
-    # B. 执行质量 (0-30)
+    # B. 执行质量 (0–10)
     #    工具调用是否成功？有没有错误？有没有尝试纠错？
     # ═══════════════════════════════════════════════════════════
 
     if tc == 0:
         # 无工具调用，不扣分也不加分
         details["execution_quality"] = "no_tools"
-        execution = 15  # 中性分
+        execution = 5.0  # 中性分
     else:
         # 工具成功率
         success_rate = (tc - tool_errors) / tc if tc > 0 else 1.0
@@ -311,47 +336,48 @@ def compute_quality(events: List[Dict], answer: str, tools_used: Set[str]) -> Tu
 
         if success_rate == 1.0 and data_rate == 1.0:
             details["execution_quality"] = "all_success_with_data"
-            execution = 30
+            execution = 10.0
         elif success_rate == 1.0 and data_rate >= 0.5:
             details["execution_quality"] = "all_success_partial_data"
-            execution = 22
+            execution = 7.0
         elif success_rate >= 0.8:
             details["execution_quality"] = "mostly_success"
-            execution = 15
+            execution = 5.0
         elif has_reflection:
             # 有错误但尝试了反思纠错 — 对训练纠错能力有价值
             details["execution_quality"] = "with_reflection_recovery"
-            execution = 12
+            execution = 4.0
         else:
             details["execution_quality"] = "has_errors"
-            execution = 5
+            execution = 2.0
 
     # 有错误事件直接扣分
     if has_error_event:
-        execution = min(execution, 10)
+        execution = min(execution, 3.0)
 
+    execution = round(execution, 1)
     details["execution_score"] = execution
     total += execution
 
     # ═══════════════════════════════════════════════════════════
-    # C. 回答可信度 (0-20)
+    # C. 回答可信度 (0–10)
     #    答案是否基于工具返回的真实数据？有没有具体信息？
     # ═══════════════════════════════════════════════════════════
 
     answer_len = len(answer) if answer else 0
-    grounding = 0
+    grounding = 0.0
 
     if tc == 0:
         # 无工具：回答可信度取决于是否有实质内容
         if answer_len >= 100:
             details["response_grounding"] = "conversational_content"
-            grounding = 8
+            grounding = 4.0
         elif answer_len >= 20:
             details["response_grounding"] = "short_reply"
-            grounding = 3
+            grounding = 1.5
         else:
             details["response_grounding"] = "minimal"
-            grounding = 0
+            grounding = 0.0
     else:
         # 有工具调用：检查答案是否引用了数据
         has_price = bool(re.search(r'[¥￥]\s*\d[\d,]*', answer)) if answer else False
@@ -362,54 +388,58 @@ def compute_quality(events: List[Dict], answer: str, tools_used: Set[str]) -> Tu
         if has_price and has_platform:
             # 明确引用了价格和平台 — 高度可信
             details["response_grounding"] = "price_and_platform_cited"
-            grounding = 20
+            grounding = 10.0
         elif has_price or has_platform:
             details["response_grounding"] = "partial_data_cited"
-            grounding = 14
+            grounding = 7.0
         elif has_spec:
             details["response_grounding"] = "spec_data_cited"
-            grounding = 10
+            grounding = 5.0
         elif has_conclusion:
             details["response_grounding"] = "conclusion_only"
-            grounding = 6
+            grounding = 3.0
         else:
             details["response_grounding"] = "no_clear_grounding"
-            grounding = 2
+            grounding = 1.0
 
     # 答案过短说明没有充分展开
     if answer_len < 50 and tc > 0:
-        grounding = min(grounding, 5)
+        grounding = min(grounding, 2.5)
 
+    grounding = round(grounding, 1)
     details["grounding_score"] = grounding
     total += grounding
 
     # ═══════════════════════════════════════════════════════════
-    # D. 数据完整度 (0-10)
+    # D. 数据完整度 (0–10)
     #    trace 结构是否完整，能否构成有效的训练样本？
     # ═══════════════════════════════════════════════════════════
 
-    completeness = 0
+    completeness = 0.0
     # 有 system prompt（从 skill_load 事件判断）
     has_system = any(e["type"] == "skill_load" for e in events)
-    completeness += 2 if has_system else 0
+    completeness += 2.0 if has_system else 0.0
     # 有用户查询
-    completeness += 2 if answer or any(e["type"] == "intent" for e in events) else 0
+    completeness += 2.0 if answer or any(e["type"] == "intent" for e in events) else 0.0
     # 有完整的工具调用闭环（call + result 配对）
     if tc > 0:
-        completeness += 3
+        completeness += 3.0
         # 所有 tool_call 都有对应 result
         if len(tool_result_events) == tc:
-            completeness += 3
+            completeness += 3.0
         elif len(tool_result_events) > 0:
-            completeness += 1
+            completeness += 1.0
     # 无工具但有答案
     elif answer_len > 0:
-        completeness += 2
+        completeness += 2.0
 
+    completeness = round(min(completeness, 10.0), 1)
     details["completeness_score"] = completeness
     total += completeness
 
-    return round(min(total, 100), 1), details
+    # ── 总分 = 四维度之和 × 2.5 → 0–100 ──
+    overall = round(total * 2.5, 1)
+    return min(overall, 100.0), details
 
 
 def export_jsonl(samples: List[TrainingSample]) -> str:
