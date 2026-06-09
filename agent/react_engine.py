@@ -91,6 +91,9 @@ class ReActAgent:
         # 配置参数（可从 Settings 传入）
         cfg = config or {}
 
+        # 保存最近一次运行的完整 messages（供 trace 持久化，M6 训练数据提取使用）
+        self._last_messages: Optional[List[Dict]] = None
+
         # ── 多模型路由：不同阶段使用不同模型 ──
         self.model_react = cfg.get("model_react", model)        # ReAct 循环（默认模型）
         self.model_plan = cfg.get("model_plan", model)          # Phase 1 计划生成
@@ -999,6 +1002,9 @@ class ReActAgent:
             )
             answer = resp.choices[0].message.content
             self.trace.synthesize_end(char_count=len(answer), model=self.model_synthesize)
+            # 保存完整 messages 供 M6 训练数据提取
+            final_msg = {"role": "assistant", "content": answer}
+            self._last_messages = list(messages) + [final_msg]
             if verbose:
                 print(f"[Phase 3] 答案生成完成 ({len(answer)} 字符)")
             return answer
@@ -1089,6 +1095,9 @@ class ReActAgent:
                 print(f"\n【Round {round_num + 1} - Thought】{thoughts}")
 
             if not response_msg.tool_calls:
+                # 保存完整 messages 供 M6 训练数据提取
+                final_msg = {"role": "assistant", "content": response_msg.content}
+                self._last_messages = list(messages) + [final_msg]
                 return response_msg.content
 
             # ── 分离元工具（load_skill）和正常工具 ──
@@ -1284,6 +1293,7 @@ class ReActAgent:
                     "content": tr["content"],
                 })
 
+        self._last_messages = list(messages)
         return "已达到最大推理轮次，无法完成回答"
 
     def _is_empty_result(self, observation: Dict) -> bool:

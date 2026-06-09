@@ -323,7 +323,7 @@ def chat_stream():
         if final_answer:
             add_message(db, session_id, 'assistant', final_answer)
             # L4: 自动保存 trace 到文件
-            _save_trace(session_id, agent_message, agent.trace, final_answer)
+            _save_trace(session_id, agent_message, agent.trace, final_answer, agent)
 
     return Response(
         stream_with_context(generate()),
@@ -342,13 +342,21 @@ TRACE_DIR = os.path.join(os.path.dirname(__file__), "eval", "results", "traces")
 os.makedirs(TRACE_DIR, exist_ok=True)
 
 
-def _save_trace(session_id: str, query: str, trace, answer: str):
-    """将 trace 事件和元数据保存为 JSON 文件"""
+def _save_trace(session_id: str, query: str, trace, answer: str, agent=None):
+    """将 trace 事件和元数据保存为 JSON 文件，agent 参数用于获取完整 messages"""
     try:
         ts = __import__('time').strftime("%Y%m%dT%H%M%S")
         sid_short = session_id[:8]
         filename = f"trace_{ts}_{sid_short}.json"
         filepath = os.path.join(TRACE_DIR, filename)
+
+        # 从 Agent 获取完整 messages（M6 训练数据提取使用，替代事件重建截断）
+        raw_messages = None
+        if agent is not None:
+            try:
+                raw_messages = agent._last_messages
+            except Exception:
+                pass
 
         payload = {
             "meta": {
@@ -358,6 +366,7 @@ def _save_trace(session_id: str, query: str, trace, answer: str):
                 "answer": answer,
             },
             "events": trace.to_list(),
+            "raw_messages": raw_messages,
         }
 
         with open(filepath, "w", encoding="utf-8") as f:
