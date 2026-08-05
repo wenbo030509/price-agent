@@ -101,7 +101,7 @@
 - **对比模式**：多款商品按维度（性能/拍照/续航/价格/屏幕）逐项对比
 
 ### 推理可视化（L1-L4）
-- **结构化 Trace 事件**：13 种事件类型（intent/mode/plan/step/tool/reflection/shopping/skill_load），替代 print() 驱动
+- **结构化 Trace 事件**：17 种事件类型（intent/mode_select/react_round/tool_call/tool_result/reflection/plan_start/plan_generated/step_start/step_end/synthesize_start/synthesize_end/shopping_phase/slot_filled/skill_load/error/done），替代 print() 驱动
 - **SSE 实时流式传输**：`/api/chat/stream` 端点，前端 ReadableStream 消费，推理步骤逐个实时出现
 - **模式特定可视化**：
   - M5 购物状态机：6 阶段横向进度条 + 槽位填充 chip
