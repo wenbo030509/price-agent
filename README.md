@@ -168,6 +168,9 @@ ARK_EMBEDDING_MODEL=doubao-embedding-vision-251215
 
 ```
 price-agent/
+  app.py                   ← Flask Web 入口（API + SSE 流式）
+  main.py                  ← 命令行 REPL 入口
+  db_manager.py            ← 数据库管理工具（终端菜单）
   agent/
     react_engine.py        ← ReActAgent + ShoppingContext（M5）+ Skills 架构
     trace.py               ← TraceEvent 结构化事件系统（L1-L2）
@@ -213,11 +216,27 @@ price-agent/
     training.html          ← M6 Trace 数据处理工坊页面
   static/js/
     training.js            ← M6 工坊前端交互逻辑（~630行）
+  abtest-demo/
+    app.py                 ← 独立 A/B 测试实验分析仪表盘
+    tools/                 ← 8 个 A/B 测试专用工具
+    skills/                ← abtest_analysis.md
   docs/modules/            ← 模块详细设计文档
   docs/trace-data-processing-plan.md  ← M6 完整方案文档
 ```
 
 ## 文档
 
-- [总规划](roadmap.md)
+- [总规划](roadmap.md) — 能力现状、架构总览、可扩展方向、待办事项
+- [模块设计](docs/modules/) — M0-M6 各模块详细设计文档
+  - [00-基础设施评估](docs/modules/00-基础设施评估.md) | [01-行业配置框架](docs/modules/01-行业配置框架.md)
+  - [02-语义召回升级](docs/modules/02-语义召回升级.md) | [03-RAG知识库](docs/modules/03-RAG知识库.md)
+  - [04-生成式推荐](docs/modules/04-生成式推荐.md) | [05-引导式购物Agent](docs/modules/05-引导式购物Agent.md)
+  - [06-LLM-as-Judge质量评估](docs/modules/06-LLM-as-Judge质量评估.md)
+- [Skills 架构方案](docs/skills-architecture-plan.md)
+- [Plan-Execute 方案](docs/plan-execute-方案.md)
+- [推理可视化方案](docs/reasoning-visualization-plan.md)
+- [Trace 数据处理方案](docs/trace-data-processing-plan.md)
+- [评估体系规划](docs/评估体系规划.md) | [测试用例手册](docs/测试用例手册.md)
+- [多平台架构说明](docs/MULTI_PLATFORM_README.md)
+- [项目复盘](docs/项目复盘文档.md) | [IT3C 复盘](docs/IT3C问题复盘-产品视角.md)
 
